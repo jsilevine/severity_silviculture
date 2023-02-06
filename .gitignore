@@ -1,0 +1,7 @@
+.DS_Store
+.idea
+*.log
+tmp/
+
+## do not, for now, include data
+data/
