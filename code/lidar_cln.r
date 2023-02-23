@@ -21,13 +21,15 @@ library(doParallel)
 library(doSNOW)
 library(progress)
 
+setwd("Documents/Jacob/lidar_processing")
+
 ##---------------------------------------------------------------
 ## 1. point data
 ##---------------------------------------------------------------
 
-point_test <- st_read("data/lidar/points/TAO__-42000_210000__t4_0p75_lp3__HighPoints.shp")
+point_test <- st_read("lidar/points/TAO__-42000_210000__t4_0p75_lp3__HighPoints.shp")
 
-filelist <- list.files("data/lidar/points", ".shp")
+filelist <- list.files("lidar/points", ".shp")
 filelist <- filelist[!grepl(".xml", filelist)]
 
 poslist <- character()
@@ -48,58 +50,79 @@ gridpts <- gridpts[order(gridpts$x, gridpts$y),]
 
 grid <- st_as_sf(gridpts, coords = c("x", "y"), crs = crs(point_test))
 
-template <- readRDS("data/templates/raster_template.rds")
+template <- readRDS("templates/raster_template.rds")
 template <- projectRaster(template, res = c(30,30), crs = crs(point_test))
 targetcoords <- as.data.frame(template, xy = TRUE, na.rm = TRUE)
 targetcoords <- as.matrix(targetcoords[,1:2])
+fullcoords <- as.data.frame(template, xy = TRUE, na.rm = FALSE)
+fullcoords <- as.matrix(fullcoords[,1:2])
 
 create_filename <- function(x, y) {
- return(paste0("data/lidar/points/TAO__", format(x, scientific = FALSE), "_",
+ return(paste0("lidar/points/TAO__", format(x, scientific = FALSE), "_",
                format(y, scientific = FALSE), "__t4_0p75_lp3__HighPoints.shp"))
 }
 
 gridpts <- gridpts[gridpts$x > min(targetcoords[,1]) & gridpts$x < max(targetcoords[,1]) &
                    gridpts$y > min(targetcoords[,2]) & gridpts$y < max(targetcoords[,2]),]
 
-subs <- split(unique(gridpts$x), ceiling(seq_along(unique(gridpts$x))/3))
+subs <- split(unique(gridpts$x), ceiling(seq_along(unique(gridpts$x))/2))
 
-gridpts_sub <- gridpts[gridpts[,1] %in% subs[[5]],]
-panes <- st_read(create_filename(gridpts_sub[1,1], gridpts_sub[1,2]))
-for (i in 2:nrow(gridpts_sub)) {
-  newpane <- st_read(create_filename(gridpts_sub[i,1], gridpts_sub[i,2]))
-  panes <- rbind(panes, newpane)
+for (i in 2:length(subs)) {
+  subs[[i]] <- c(subs[[i-1]][length(subs[[i-1]])], subs[[i]])
 }
 
-ext <- extent(panes)
-
-## 2. get all target coords within pane
-tg <- targetcoords[targetcoords[,1] < ext[2] & targetcoords[,1] > ext[1] &
-                   targetcoords[,2] < ext[4] & targetcoords[,2] > ext[3],]
-
-
-trees <- st_coordinates(panes)
-t <- 1 ## for testing
-
-cl <- makeSOCKcluster(4)
+cl <- makeSOCKcluster(15)
 registerDoSNOW(cl)
-iter <- nrow(tg)
-pb <- progress_bar$new(format = "Calculating [:bar] :current/:total (:percent) | elapsed: :elapsed",
-                       total = iter)
-pb$tick(0)
-progress <- function() pb$tick()
-opts <- list(progress = progress)
-tree_data <-
-  foreach(t = 1:nrow(tg),
+
+for (s in 3:length(subs)) {
+  
+  print(paste0("Starting grid subset ", s, " of ", length(subs)))
+  
+  gridpts_sub <- gridpts[gridpts[,1] %in% subs[[s]],]
+  panes <- st_read(create_filename(gridpts_sub[1,1], gridpts_sub[1,2]))
+  for (i in 2:nrow(gridpts_sub)) {
+    newpane <- st_read(create_filename(gridpts_sub[i,1], gridpts_sub[i,2]))
+    panes <- rbind(panes, newpane) 
+  }
+
+  ext <- extent(min(gridpts_sub[,1]), max(gridpts_sub[, 1])+2000, 
+                min(gridpts_sub[,2]), max(gridpts_sub[, 2])+2000)
+
+  if (s == 1) {
+    ext_sub <- ext
+  } else {
+   ext_sub <- extent(unique(gridpts_sub[,1])[2]-90, max(gridpts_sub[, 1])+2000, 
+                      min(gridpts_sub[,2]), max(gridpts_sub[, 2])+2000)
+  }
+
+  ## 2. get all target coords within pane
+  fg <- fullcoords[fullcoords[,1] < ext[2] & fullcoords[,1] > ext[1] &
+                     fullcoords[,2] < ext[4] & fullcoords[,2] > ext[3],]
+
+  tg <- targetcoords[targetcoords[,1] < ext_sub[2] & targetcoords[,1] > ext_sub[1] &
+                    targetcoords[,2] < ext_sub[4] & targetcoords[,2] > ext_sub[3],]
+
+  trees <- st_coordinates(panes)
+
+  iter <- nrow(tg)
+  pb <- progress_bar$new(format = "Calculating [:bar] :current/:total (:percent) | elapsed: :elapsed",
+                         total = iter)
+  pb$tick(0)
+  progress <- function() pb$tick()
+  opts <- list(progress = progress)
+  tree_data <-
+   foreach(t = 1:nrow(tg),
         .combine = rbind,
+        .packages = c("FNN"),
         .options.snow = opts) %dopar% {
 
             target <- tg[t,]
-            target_group <- targetcoords[targetcoords[,1] >= target[1] - 30.0 & targetcoords[,1] <= target[1] + 30.0 &
-                                         targetcoords[,2] >= target[2] - 30.0 & targetcoords[,2] <= target[2] + 30.0,]
+            target_group <- fg[fg[,1] >= target[1] - 30.0 & fg[,1] <= target[1] + 30.0 &
+                               fg[,2] >= target[2] - 30.0 & fg[,2] <= target[2] + 30.0,]
             tree_clip <- trees[trees[,1] > target[1] - 45.0 & trees[,1] < target[1] + 45.0 &
                                trees[,2] > target[2] - 45.0 & trees[,2] < target[2] + 45.0, ]
 
-            if (nrow(target_group) < 9 | nrow(tree_clip) == 0) {
+            if (nrow(target_group) < 9 | nrow(matrix(tree_clip, ncol = 2)) <= 1) {
               clust <- NA
               mean_dens <- NA
             }
@@ -114,12 +137,12 @@ tree_data <-
             }
 
             data.frame(x = tg[t,1], y = tg[t,2],
-                       clust = clust, mean_dens = mean_dens)
-          }
+                        clust = clust, mean_dens = mean_dens)
+
+        }
+
+  write.csv(tree_data, paste0("processed/tree_data_", s, ".csv"))
+
+}
 
 
-
-
-test <- ext_gen(as.numeric(target))
-x <- st_filter(panes, test)
-nrow(x)
