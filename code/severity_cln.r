@@ -7,7 +7,7 @@ library(fasterize)
 library(raster)
 library(ggplot2)
 library(gganimate)
-setwd("../")
+setwd("severity_and_silviculture/")
 
 ##---------------------------------------------------------------
 ## Clean and save final fire perimeters from LANDFIRE/FRAP
@@ -56,17 +56,18 @@ st_write(gee_perims, "data/perimeters/gee_perimeters.shp", append = FALSE)
 ##---------------------------------------------------------------
 ## get severity data from standard perimeters, no daily data
 ##---------------------------------------------------------------
-
+fire_name <- "dixie"
 pull_full_severity <- function(fire_name) {
-  rdnbr <- raster(paste0("data/rdnbr/", fire_name, "_rdnbr.tif"))
   perim_data <- readRDS(paste0("data/perimeters/", fire_name, "_perim.rds"))
+  rdnbr <- raster(paste0("data/cbi/ravg/ravg_", perim_data$YEAR_[1], "_cbi4.tif"))
   perim_data <- st_transform(perim_data, crs = crs(rdnbr))
+  rdnbr <- crop(rdnbr, perim_data)
   mask <- fasterize(perim_data, rdnbr)
   sev <- mask(rdnbr, mask)
-  sev <- as.data.frame(as(sev, "SpatialPixelsDataFrame"))
-  colnames(sev)[1] <- "rdnbr"
+  sev[sev > 4]  <- NA
   return(sev)
 }
+
 
 dixie_severity <- pull_full_severity("dixie")
 northcomplex_severity <- pull_full_severity("northcomplex")
@@ -74,8 +75,8 @@ sheep_severity <- pull_full_severity("sheep")
 walker_severity <- pull_full_severity("walker")
 sugar_severity <- pull_full_severity("sugar")
 
-saveRDS(dixie_severity, "data/full_severity/dixie_severity.rds")
-saveRDS(northcomplex_severity, "data/full_severity/northcomplex_severity.rds")
-saveRDS(sheep_severity, "data/full_severity/sheep_severity.rds")
-saveRDS(walker_severity, "data/full_severity/walker_severity.rds")
-saveRDS(sugar_severity, "data/full_severity/sugar_severity.rds")
+saveRDS(dixie_severity, "data/cbi/ravg/dixie_cbi_ravg.rds")
+saveRDS(northcomplex_severity, "data/cbi/ravg/northcomplex_cbi_ravg.rds")
+saveRDS(sheep_severity, "data/cbi/ravg/sheep_cbi_ravg.rds")
+saveRDS(walker_severity, "data/cbi/ravg/walker_cbi_ravg.rds")
+saveRDS(sugar_severity, "data/cbi/ravg/sugar_cbi_ravg.rds")
