@@ -205,7 +205,7 @@ rm(sheep_daily_burned.df)
 walker_perim <- readRDS("data/perimeters/walker_perim.rds")
 walker_start <- as.Date(walker_perim$ALARM_DATE)
 walker_end <- as.Date(walker_perim$CONT_DATE)
-walker_severity <- raster("data/rdnbr//walker_rdnbr.tif")
+walker_severity <- raster("data/rdnbr/walker_rdnbr.tif")
 
 walker_daily_burned <- extract_daily_perims(start_date = walker_start, end_date = walker_end,
                                             perim = walker_perim, severity_raster = walker_severity,
@@ -238,3 +238,25 @@ sugar_daily_burned.df <- as.data.frame(sugar_daily_burned, xy = TRUE, na.rm = TR
 colnames(sugar_daily_burned.df)[3] <- "datetime"
 write.csv(sugar_daily_burned.df, "data/fire_progression/sugar_daily_burned.csv")
 rm(sugar_daily_burned.df)
+
+wdb <- readRDS("severity_and_silviculture/data/fire_progression/walker_daily_burned.rds")
+plot(wdb)
+
+
+
+perim <- readRDS("severity_and_silviculture/data/perimeters/walker_perim.rds")
+start_date <- as.Date(walker_perim$ALARM_DATE)
+end_date <- as.Date(walker_perim$CONT_DATE)
+walker_severity <- raster("severity_and_silviculture/data/rdnbr/walker_rdnbr.tif")
+start_buffer <- 5
+end_buffer <- 10
+sub_viirs <- viirs[viirs$ACQ_DATE >= start_date-start_buffer &
+                     viirs$ACQ_DATE <= end_date+end_buffer,]
+sub_viirs <- st_intersection(sub_viirs, perim)
+
+plot(sub_viirs[, "ACQ_DATE"])
+
+
+ww <- fread("severity_and_silviculture/data/complete_data.csv")
+ww <- ww[fire_name == "walker", ]
+plot(rasterFromXYZ(ww[, c("x", "y", "CBI_bc")]))

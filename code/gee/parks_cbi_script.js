@@ -2,8 +2,7 @@
 //
 // Script to develop and export maps of Composite Burn Index (CBI) predictions, and spectral imagery that
 // supports the CBI predictions, for fires in North America.
-// For updates or questions on this code, please can contact:
-//        Lisa Holsinger, lisa.holsinger@usda.gov
+// For updates or questions on this code, please contact:
 //        Sean Parks,     sean.parks@usda.gov
 
 
@@ -35,6 +34,13 @@
 // Thanks to Alison Paulson for alerting us about this issue.
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/////////////////////////////////////////////////////////////////////////////////////
+///////////////            UPDATE 12/16/2021             /////////////////////////////
+//  We updated the Landsat imagery to import Collection 2, Level 2 (SR), Tier 1
+//  and to use new rescaling and mask parameters
+
+///////////////            UPDATE 10/13/2022             /////////////////////////////
+//  We updated the Landsat imagery to import Landsat 9 from Collection 2, Level 2 (SR), Tier 1
 
 /////////////////////////////////////////////////////////////////////////////////////
 //                        INPUTS                                                   //
@@ -46,11 +52,11 @@
 //       Fire_Year      year of fire
 //       Start_Day      start day of fire season in julian days, e.g. June 15 = 166
 //       End_Day        end day of fire season in julian days
-var fires = ee.FeatureCollection("~/");
+var fires = ee.FeatureCollection("users/jl104/gee_perimeters");
 
 //----------        IMAGERY SELECTION        ---------------------------//
 // Select the imagery to export from the suite of available indices below.
-// Add the VARIABLE NAMES (as desired) to brackets below, using quotes, e.g.  ['CBI', 'CBI_bc','dnbr', 'rbr']
+// Add the VARIABLE NAMES (as desired) to brackets below, using quotes, e.g.  ['CBI', 'CBI_bc', 'dnbr', 'rbr']
 
 //    VARIABLE NAME     DESCRIPTION
 //    CBI               Composite Burn Index
@@ -64,7 +70,8 @@ var fires = ee.FeatureCollection("~/");
 //    dmirbi            delta mid-infrared bi-spectral index
 //    post_nbr          post-fire normalized burn ratio
 //    post_mirbi        post-fire mid-infrared bi-spectral index
-var bandsToExport      = ['CBI', 'CBI_bc', 'rbr']
+var bandsToExport      = ['CBI_bc']
+
 
 /////////////////////////////////////////////////////////////////////////////////////
 //                        END  OF INPUTS                                           //
@@ -110,72 +117,84 @@ var bandList      = ['dnbr', 'rbr', 'rdnbr', 'dndvi', 'devi', 'dndmi', 'dmirbi',
 //////////////////////////////////
 //  GET LANDSAT COLLECTIONS
 //////////////////////////////////
-// Landsat 4, 5, 7, and 8 Surface Reflectance Tier 1 collections
-var ls8SR = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR'),
-    ls7SR = ee.ImageCollection('LANDSAT/LE07/C01/T1_SR'),
-    ls5SR = ee.ImageCollection('LANDSAT/LT05/C01/T1_SR'),
-    ls4SR = ee.ImageCollection('LANDSAT/LT04/C01/T1_SR');
+// Landsat 5, 7, 8 and 9 Surface Reflectance (Level 2) Tier 1 Collection 2
+var ls9SR = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2'),
+    ls8SR = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2'),
+    ls7SR = ee.ImageCollection('LANDSAT/LE07/C02/T1_L2'),
+    ls5SR = ee.ImageCollection('LANDSAT/LT05/C02/T1_L2'),
+    ls4SR = ee.ImageCollection('LANDSAT/LT04/C02/T1_L2');
 
 /////////////////////////////////////////
 // FUNCTIONS TO CREATE SPECTRAL INDICES
 /////////////////////////////////////////
-// Returns indices for LS8
-var ls8_Indices = function(lsImage){
-  var nbr  = lsImage.normalizedDifference(['B5', 'B7']).toFloat();
-  var ndvi = lsImage.normalizedDifference(['B5', 'B4']).toFloat();
-  var ndmi = lsImage.normalizedDifference(['B5', 'B6']).toFloat();
+// Apply scaling factors.
+var applyScaleFactors=function(lsImage) {
+  var opticalBands=lsImage.select(["SR_B."]).multiply(0.0000275).add(-0.2);
+  return lsImage.addBands(opticalBands, null, true)
+}
+
+// Returns vegetation indices for LS8 and LS9
+var ls8_9_Indices = function(lsImage){
+  var nbr  = lsImage.normalizedDifference(['SR_B5', 'SR_B7']).toFloat();
+  var ndvi = lsImage.normalizedDifference(['SR_B5', 'SR_B4']).toFloat();
+  var ndmi = lsImage.normalizedDifference(['SR_B5', 'SR_B6']).toFloat();
   var evi  = lsImage.expression(
-              '(2.5 * ((B5 - B4) / (B5 + (6 * B4) - (7.5 * B2) + 1)))',
-              {'B5': lsImage.select('B5').multiply(0.0001),
-              'B4': lsImage.select('B4').multiply(0.0001),
-              'B2': lsImage.select('B2').multiply(0.0001),
-              }).toFloat();
+              '2.5 * ((SR_B5 - SR_B4) / (SR_B5 + 6 * SR_B4 - 7.5 * SR_B2 + 1))',
+              {'SR_B5': lsImage.select('SR_B5'),
+              'SR_B4': lsImage.select('SR_B4'),
+              'SR_B2': lsImage.select('SR_B2')}).toFloat();
   var mirbi = lsImage.expression(
-              '((10 * B6) - (9.8 * B7) + 2)',
-              {'B6': lsImage.select('B6').multiply(0.0001),
-              'B7': lsImage.select('B7').multiply(0.0001),
+              '((10 * SR_B6) - (9.8 * SR_B7) + 2)',
+              {'SR_B6': lsImage.select('SR_B6'),
+               'SR_B7': lsImage.select('SR_B7'),
               }).toFloat();
-  var qa = lsImage.select(['pixel_qa']);
+  var qa = lsImage.select(['QA_PIXEL']);
   return nbr.addBands([ndvi,ndmi,evi,mirbi,qa])
-          .select([0,1,2,3,4,5], ['nbr','ndvi','ndmi','evi','mirbi','pixel_qa'])
+          .select([0,1,2,3,4,5], ['nbr','ndvi','ndmi','evi','mirbi','QA_PIXEL'])
           .copyProperties(lsImage, ['system:time_start']);
 
   };
 
 // Returns indices for LS4, LS5 and LS7
 var ls4_7_Indices = function(lsImage){
-  var nbr = lsImage.normalizedDifference(['B4', 'B7']).toFloat();
-  var ndvi = lsImage.normalizedDifference(['B4', 'B3']).toFloat();
-  var ndmi = lsImage.normalizedDifference(['B4', 'B5']).toFloat();
+  var nbr  = lsImage.normalizedDifference(['SR_B4', 'SR_B7']).toFloat();
+  var ndvi = lsImage.normalizedDifference(['SR_B4', 'SR_B3']).toFloat();
+  var ndmi = lsImage.normalizedDifference(['SR_B4', 'SR_B5']).toFloat();
   var evi = lsImage.expression(
-              '(2.5 * ((B4 - B3) / (B4 + (6 * B3) - (7.5 * B1) + 1)))',
-              {'B4': lsImage.select('B4').multiply(0.0001),
-              'B3': lsImage.select('B3').multiply(0.0001),
-              'B1': lsImage.select('B1').multiply(0.0001),
-              }).toFloat();
+              '2.5 * ((SR_B4 - SR_B3) / (SR_B4 + 6 * SR_B3 - 7.5 * SR_B1 + 1))',
+              {'SR_B4': lsImage.select('SR_B4'),
+               'SR_B3': lsImage.select('SR_B3'),
+               'SR_B1': lsImage.select('SR_B1')}).toFloat();
   var mirbi = lsImage.expression(
-              '((10 * B5) - (9.8 * B7) + 2)',
-              {'B5': lsImage.select('B5').multiply(0.0001),
-              'B7': lsImage.select('B7').multiply(0.0001),
+              '((10 * SR_B5) - (9.8 * SR_B7) + 2)',
+              {'SR_B5': lsImage.select('SR_B5'),
+               'SR_B7': lsImage.select('SR_B7'),
               }).toFloat();
-  var qa = lsImage.select(['pixel_qa']);
+  var qa = lsImage.select(['QA_PIXEL']);
   return nbr.addBands([ndvi,ndmi,evi,mirbi,qa])
-          .select([0,1,2,3,4,5], ['nbr','ndvi','ndmi','evi','mirbi','pixel_qa'])
+          .select([0,1,2,3,4,5], ['nbr','ndvi','ndmi','evi','mirbi','QA_PIXEL'])
           .copyProperties(lsImage, ['system:time_start']);
   };
 
 /////////////////////////////////////////////////
 // FUNCTION TO MASK CLOUD, WATER, SNOW, ETC.
 ////////////////////////////////////////////////
-var lsCfmask = function(lsImg){
-  var quality =lsImg.select(['pixel_qa']);
-  var clear = quality.bitwiseAnd(8).eq(0)             // cloud shadow
-                .and(quality.bitwiseAnd(32).eq(0)     // cloud
-                .and(quality.bitwiseAnd(4).eq(0)      // water
-                .and(quality.bitwiseAnd(16).eq(0)))); // snow
-  return lsImg.updateMask(clear).select([0,1,2,3,4])
-            .copyProperties(lsImg, ['system:time_start']);
-};
+var lsCfmask = function(lsImage) {
+	// Bits 3,4,5,7: cloud,cloud-shadow,snow,water respectively.
+	var cloudsBitMask      = (1 << 3);
+	var cloudShadowBitMask = (1 << 4);
+	var snowBitMask        = (1 << 5);
+	var waterBitMask       = (1 << 7);
+	// Get the pixel QA band.
+	var qa = lsImage.select('QA_PIXEL');
+	// Flags should be set to zero, indicating clear conditions.
+  var clear =  qa.bitwiseAnd(cloudsBitMask).eq(0)
+              .and(qa.bitwiseAnd(cloudShadowBitMask).eq(0))
+              .and(qa.bitwiseAnd(snowBitMask).eq(0))
+              .and(qa.bitwiseAnd(waterBitMask).eq(0));
+	return lsImage.updateMask(clear).select([0,1,2,3,4])
+              .copyProperties(lsImage,["system:time_start"]);
+}
 
 // Create water mask from Hansen's Global Forest Change to use in processing function
 var waterMask = ee.Image('UMD/hansen/global_forest_change_2015').select(['datamask']).eq(1);
@@ -183,17 +202,24 @@ var waterMask = ee.Image('UMD/hansen/global_forest_change_2015').select(['datama
 /////////////////////////////////////////////////
 // RUN FUNCTIONS ON LANDSAT COLLECTION
 ////////////////////////////////////////////////
-var ls8 = ls8SR.map(ls8_Indices)
+var ls9 = ls9SR.map(applyScaleFactors)
+                .map(ls8_9_Indices)
                 .map(lsCfmask);
-var ls7 = ls7SR.map(ls4_7_Indices)
-                .map(lsCfmask);
-var ls5 = ls5SR.map(ls4_7_Indices)
-                .map(lsCfmask);
-var ls4 = ls4SR.map(ls4_7_Indices)
-                .map(lsCfmask);
+var ls8 = ls8SR.map(applyScaleFactors)
+               .map(ls8_9_Indices)
+               .map(lsCfmask);
+var ls7 = ls7SR.map(applyScaleFactors)
+               .map(ls4_7_Indices)
+               .map(lsCfmask);
+var ls5 = ls5SR.map(applyScaleFactors)
+               .map(ls4_7_Indices)
+               .map(lsCfmask);
+var ls4 = ls4SR.map(applyScaleFactors)
+               .map(ls4_7_Indices)
+               .map(lsCfmask);
 
 // Merge Landsat Collections
-var lsCol = ee.ImageCollection(ls8.merge(ls7).merge(ls5).merge(ls4));
+var lsCol = ee.ImageCollection(ls9.merge(ls8).merge(ls7).merge(ls5).merge(ls4));
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 // ------------------ Create Spectral Imagery for each fire -----------------//
@@ -392,6 +418,6 @@ for (var j = 0; j < nFires; j++){
   });
 }}
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////
 // DONE //
 //////////

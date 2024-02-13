@@ -1,3 +1,4 @@
+
 ##---------------------------------------------------------------
 ## weather_cln.r
 ## SCRIPT TO DOWNLOAD WEATHER DATA, CALCULATE WEIGHTED AVERAGES
@@ -473,4 +474,5 @@ test2 <- read.csv("data/fire_progression//northcomplex_daily_burned.csv")
 ggplot(test2, aes(x = x, y = y, color = datetime)) +
   geom_tile() +
   theme_bw()
+
 

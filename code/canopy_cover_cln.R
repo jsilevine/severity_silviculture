@@ -29,7 +29,7 @@ cc_32.n <- raster("data/canopy_cover/CanopyCover_32-None_PNF_1_BS30.tif")
 cc_full <- raster("data/canopy_cover/CanopyCover_2-None_PNF_1_BS30.tif")
 
 ##---------------------------------------------------------------
-## 2. mask by perimeters
+## 2. create raster template
 ##---------------------------------------------------------------
 
 ## resample to daily progression grid
@@ -56,6 +56,10 @@ colnames(cc_full.df)[3] <- "cc"
 
 saveRDS(cc_full, "data/canopy_cover/processed/cc_full.rds")
 write.csv(cc_full.df, "data/canopy_cover/processed/cc_full.csv")
+
+##---------------------------------------------------------------
+## 3. use raster template to mask and resample cc data
+##---------------------------------------------------------------
 
 raster_template <- readRDS("data/templates/raster_template.rds")
 
@@ -102,3 +106,24 @@ colnames(cc_32.n.df)[3] <- "cc"
 
 saveRDS(cc_32.n, "data/canopy_cover/processed/cc_32-n.rds")
 write.csv(cc_32.n.df, "data/canopy_cover/processed/cc_32-n.csv")
+
+##---------------------------------------------------------------
+## 4. create complete dataset
+##---------------------------------------------------------------
+
+cc_2.8.df <- data.table(cc_2.8.df)
+colnames(cc_2.8.df)[3] <- "cc2_8"
+cc_8.16.df <- data.table(cc_8.16.df)
+colnames(cc_8.16.df)[3] <- "cc8_16"
+cc_16.32.df <- data.table(cc_16.32.df)
+colnames(cc_16.32.df)[3] <- "cc16_32"
+cc_32.n.df <- data.table(cc_32.n.df)
+colnames(cc_32.n.df)[3] <- "cc32_n"
+
+
+
+cc_complete <- cc_2.8.df[cc_8.16.df, on = .(x,y), nomatch = NULL]
+cc_complete <- cc_complete[cc_16.32.df, on = .(x,y), nomatch = NULL]
+cc_complete <- cc_complete[cc_32.n.df, on = .(x,y), nomatch = NULL]
+
+fwrite(cc_complete, "data/canopy_cover/processed/cc_complete.csv")
