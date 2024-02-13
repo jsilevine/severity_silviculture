@@ -21,24 +21,17 @@ library(doParallel)
 library(doSNOW)
 library(progress)
 
-setwd("data/lidar_processing")
+
+setwd("Documents/Jacob/lidar_processing")
+>>>>>>> origin/main
 
 ##---------------------------------------------------------------
 ## 1. point data
 ##---------------------------------------------------------------
-point_test <- st_read("data/lidar/points/TAO__-42000_210000__t4_0p75_lp3__HighPoints.shp")
 
-plot(point_test['height_ft'])
-ggplot(point_test, aes(color = height_ft)) +
-  geom_sf() +
-  scale_color_gradient(low = "#e7e1ef", high = "#dd1c77") +
-  theme_bw() +
-  scale_y_continuous(expand = c(0,0)) +
-  scale_x_continuous(expand = c(0,0))
-ggsave("../f1.pdf")
+point_test <- st_read("lidar/points/TAO__-42000_210000__t4_0p75_lp3__HighPoints.shp")
 
-filelist <- list.files("data/lidar/points", ".shp")
-filelist <- filelist[!grepl(".xml", filelist)]
+filelist <- list.files("lidar/points", ".shp")
 
 poslist <- character()
 gridpts <- data.frame(x = numeric(length(filelist)), y = numeric(length(filelist)))
@@ -58,7 +51,7 @@ gridpts <- gridpts[order(gridpts$x, gridpts$y),]
 
 grid <- st_as_sf(gridpts, coords = c("x", "y"), crs = crs(point_test))
 
-template <- readRDS("data/templates/raster_template.rds")
+template <- readRDS("templates/raster_template.rds")
 template <- projectRaster(template, res = c(30,30), crs = crs(point_test))
 targetcoords <- as.data.frame(template, xy = TRUE, na.rm = TRUE)
 targetcoords <- as.matrix(targetcoords[,1:2])
