@@ -55,7 +55,7 @@ canopy_cover$y_j <- round(canopy_cover$y, 5)
 
 ## join topography and canopy cover
 full_data <- canopy_cover[topography, on = .(x_j,y_j), nomatch = NULL]
-full_data <- full_data[,.(x,y,cc2_8,cc8_16,cc16_32,cc32_n,x_j,y_j,elevation, slope, tpi,heat_load)]
+full_data <- full_data[,.(x,y,cc2_8,cc8_16,cc16_32,cc32_n,x_j,y_j,elevation,slope,tpi,heat_load)]
 
 rm(topography, canopy_cover)
 
@@ -71,9 +71,9 @@ calc_em <- function(i, data = full_data) {
 }
 
 i <- 1:nrow(full_data)
-full_data[,"em"] <- sapply(i, FUN = calc_em) ## takes a little while
-
-
+em <- mclapply(i, FUN = calc_em, mc.cores = 8) ## takes a little while
+full_data[,"em"] <- unlist(em)
+rm(em)
 
 
 ##---------------------------------------------------------------
@@ -113,9 +113,8 @@ full_data <- full_data[, .(x, y, CBI_bc, fire_name, cc2_8, cc8_16, cc16_32, cc32
 ## high severity cutoffs
 full_data$hs <- 0
 full_data[CBI_bc > 2.25, "hs"] <- 1
-full_data$hs_class <- "low-none"
+full_data$hs_class <- "not_high"
 full_data[CBI_bc > 2.25, "hs_class"] <- "high"
-full_data[CBI_bc < 2.25 & CBI_bc > 1.25, "hs_class"] <- "med"
 
 rm(full_severity)
 
@@ -185,7 +184,6 @@ for (fire in unique(full_data$fire_name)) {
         } else {
           return(0)
         }
-
       }
 
       full_data[full_data$fire_name == fire & full_data$datetime_formatted == dt[i], "prev_sev"] <-
@@ -193,10 +191,8 @@ for (fire in unique(full_data$fire_name)) {
                dwm,
                mc.cores = 8))
     }
-
     print(paste0("completed: ", fire, ", iteration ", i))
   }
-
 }
 
 ##---------------------------------------------------------------
@@ -240,9 +236,10 @@ calc_vpd <- function(rh, temp){
 full_weather$vpd <- unlist(mapply(calc_vpd, full_weather$avg_fuel_moisture, full_weather$avg_air_temp))
 full_weather$hdw <- full_weather$vpd * full_weather$avg_wind_speed
 
-
 full_weather$x_j <- round(full_weather$x, 5)
 full_weather$y_j <- round(full_weather$y, 5)
+fwrite(full_weather, "data/weather/full_weather.csv")
+
 full_data <- full_weather[full_data, on = .(x_j, y_j)]
 full_data <- full_data[,.(x,y,hs,CBI_bc,fire_name,datetime_formatted,avg_air_temp,max_air_temp,avg_wind_speed,max_wind_speed,
                           avg_relative_humidity,vpd,hdw,
@@ -253,32 +250,69 @@ full_data <- full_data[,.(x,y,hs,CBI_bc,fire_name,datetime_formatted,avg_air_tem
 ## 6. forest structure
 ##---------------------------------------------------------------
 
-## gap data
-gap_data <- fread("data/processed/gap_data_30m_full.csv")
-gap_data <- gap_data[,.(x,y,mean_area,median_area,sd_area,percent_open)]
+## gap data 30m
+gap_data_30 <- fread("data/processed/gap_data_30m_full.csv")
+gap_data_30 <- gap_data_30[,.(x,y,mean_area,median_area,sd_area,percent_open,mean_frac)]
 
-gap_data_raster <- rasterFromXYZ(gap_data, crs = 3310)
-gap_data_raster <- snap_to_template(gap_data_raster, template)
-gap_data <- data.table(as.data.frame(gap_data_raster, xy = TRUE, na.rm = TRUE))
-gap_data$x_j <- round(gap_data$x, 5)
-gap_data$y_j <- round(gap_data$y, 5)
+gap_data_raster_30 <- rasterFromXYZ(gap_data_30, crs = 3310)
+gap_data_raster_30 <- snap_to_template(gap_data_raster_30, template)
+gap_data_30 <- data.table(as.data.frame(gap_data_raster_30, xy = TRUE, na.rm = TRUE))
+gap_data_30$x_j <- round(gap_data_30$x, 5)
+gap_data_30$y_j <- round(gap_data_30$y, 5)
+setnames(gap_data_30,
+         c("mean_area","median_area","sd_area","percent_open","mean_frac"),
+         c("mean_area_30","median_area_30","sd_area_30","percent_open_30","mean_frac_30"))
 
-full_data <- gap_data[full_data, on = .(x_j, y_j)]
+full_data <- gap_data_30[full_data, on = .(x_j, y_j)]
+rm(gap_data_30)
 
-## tree data
-tree_data <- fread("data/processed/tree_data_1.csv")
-for (i in 2:31) {
-  tree_data <- rbind(tree_data, fread(paste0("data/processed/tree_data_", i, ".csv")))
-}
+## gap data 180m
+gap_data_180 <- fread("data/processed/gap_data_180m_full.csv")
+gap_data_180 <- gap_data_180[,.(x,y,mean_area,median_area,sd_area,percent_open,mean_frac)]
 
-tree_data <- tree_data[,.(x,y,clust,mean_dens)]
-tree_data_raster <- rasterFromXYZ(tree_data, crs = 3310)
-tree_data_raster <- snap_to_template(tree_data_raster, template)
-tree_data <- data.table(as.data.frame(tree_data_raster, xy = TRUE, na.rm = TRUE))
-tree_data$x_j <- round(tree_data$x, 5)
-tree_data$y_j <- round(tree_data$y, 5)
+gap_data_raster_180 <- rasterFromXYZ(gap_data_180, crs = 3310)
+gap_data_raster_180 <- snap_to_template(gap_data_raster_180, template)
+gap_data_180 <- data.table(as.data.frame(gap_data_raster_180, xy = TRUE, na.rm = TRUE))
+gap_data_180$x_j <- round(gap_data_180$x, 5)
+gap_data_180$y_j <- round(gap_data_180$y, 5)
+setnames(gap_data_180,
+         c("mean_area","median_area","sd_area","percent_open","mean_frac"),
+         c("mean_area_180","median_area_180","sd_area_180","percent_open_180","mean_frac_180"))
 
-full_data <- tree_data[full_data, on = .(x_j, y_j)]
+full_data <- gap_data_180[full_data, on = .(x_j, y_j)]
+rm(gap_data_180)
+
+## tree data 30m
+tree_data_30 <- fread("data/processed/tree_data_30m_full.csv")
+
+tree_data_30 <- tree_data_30[,.(x,y,clust,mean_dens,mean_ht)]
+tree_data_raster_30 <- rasterFromXYZ(tree_data_30, crs = 3310)
+tree_data_raster_30 <- snap_to_template(tree_data_raster_30, template)
+tree_data_30 <- data.table(as.data.frame(tree_data_raster_30, xy = TRUE, na.rm = TRUE))
+tree_data_30$x_j <- round(tree_data_30$x, 5)
+tree_data_30$y_j <- round(tree_data_30$y, 5)
+setnames(tree_data_30,
+         c("clust","mean_dens", "mean_ht"),
+         c("clust_30","mean_dens_30", "mean_ht_30"))
+
+full_data <- tree_data_30[full_data, on = .(x_j, y_j)]
+rm(tree_data_30)
+
+## tree data 180m
+tree_data_180 <- fread("data/processed/tree_data_180m_full.csv")
+
+tree_data_180 <- tree_data_180[,.(x,y,clust,mean_dens,mean_ht)]
+tree_data_raster_180 <- rasterFromXYZ(tree_data_180, crs = 3310)
+tree_data_raster_180 <- snap_to_template(tree_data_raster_180, template)
+tree_data_180 <- data.table(as.data.frame(tree_data_raster_180, xy = TRUE, na.rm = TRUE))
+tree_data_180$x_j <- round(tree_data_180$x, 5)
+tree_data_180$y_j <- round(tree_data_180$y, 5)
+setnames(tree_data_180,
+         c("clust","mean_dens", "mean_ht"),
+         c("clust_180","mean_dens_180", "mean_ht_180"))
+
+full_data <- tree_data_180[full_data, on = .(x_j, y_j)]
+rm(tree_data_180)
 
 ##---------------------------------------------------------------
 ## 7. ownership
@@ -289,30 +323,46 @@ ownership$x_j <- round(ownership$x, 5)
 ownership$y_j <- round(ownership$y, 5)
 
 full_data <- ownership[full_data, on = .(x_j, y_j)]
-full_data <- full_data[, .(x,y,hs,CBI_bc,fire_name,datetime_formatted,own_int,own_type,clust,mean_dens,mean_area,median_area,
-                           sd_area,percent_open,avg_air_temp,max_air_temp,avg_wind_speed,max_wind_speed,avg_relative_humidity,vpd,hdw,
+full_data <- full_data[, .(x,y,hs,CBI_bc,fire_name,datetime_formatted,own_int,own_type,clust_30,mean_dens_30,mean_ht_30,mean_area_30,median_area_30,
+                           sd_area_30,percent_open_30,mean_frac_30,clust_180,mean_dens_180,mean_ht_180,mean_area_180,median_area_180,
+                           sd_area_180,percent_open_180,mean_frac_180,avg_air_temp,max_air_temp,avg_wind_speed,max_wind_speed,avg_relative_humidity,vpd,hdw,
                            avg_fuel_moisture,avg_fuel_temp,elevation,slope,tpi,heat_load,cc2_8,cc8_16,cc16_32,cc32_n,em,prev_sev)]
 
-full_data$hs_class <- "low-none"
+full_data$hs_class <- "not_high"
 full_data[CBI_bc > 2.25, "hs_class"] <- "high"
-full_data[CBI_bc < 2.25 & CBI_bc > 1.25, "hs_class"] <- "med"
+
+
+coords <- st_as_sf(full_data[,c(1,2,3)], coords = c("x", "y"), crs = st_crs(4326))
+coords <- st_transform(coords, crs = 3310)
+xy <- st_coordinates(coords)
+full_data$x <- xy[,1]
+full_data$y <- xy[,2]
 
 fwrite(full_data, "data/complete_data.csv")
 
 full_data <- fread("data/complete_data.csv")
-
-nrow(full_data[hs == 1]) / nrow(full_data)
-nrow(full_data[fire_name == "dixie" & CBI_bc > 1.75]) / nrow(full_data[fire_name == "dixie"])
-
 
 
 ##---------------------------------------------------------------
 ## 8. check out the data
 ##---------------------------------------------------------------
 full_data <- fread("data/complete_data.csv")
-data <- full_data
+
+
+summary(lm(CBI_bc ~ hdw * mean_dens_30, data = full_data))
+
+
+
+full_data[is.na(percent_open_30) & !is.na(clust_30),"percent_open_30"] <- 1
+plot(rasterFromXYZ(full_data[,.(x,y,percent_open_30)]))
+full_data[is.na(percent_open_180) & !is.na(clust_180),"percent_open_180"] <- 1
+plot(rasterFromXYZ(full_data[,.(x,y,percent_open_180)]))
+
+plot(rasterFromXYZ(full_data[,.(x,y,own_int)]))
+
+
 p1 <- ggplot() +
-  geom_tile(data = data[data$clust < 2 & data$x < -121 & data$y < 39.8,],
+  geom_tile(full_data = full_data[full_data$clust < 2 & full_data$x < -121 & full_data$y < 39.8,],
             aes(x = x, y = y, fill = clust)) +
   scale_fill_distiller(type = "div", palette = "Spectral") +
   ggtitle("stem clustering") +
@@ -321,7 +371,7 @@ p1 <- ggplot() +
   theme_bw()
 
 p2 <- ggplot() +
-  geom_tile(data = data[data$clust < 2 & data$x < -121 & data$y < 39.8,],
+  geom_tile(full_data = full_data[full_data$clust < 2 & full_data$x < -121 & full_data$y < 39.8,],
             aes(x = x, y = y, fill = mean_dens)) +
   scale_fill_distiller(type = "div", palette = "Spectral") +
   ggtitle("stem density") +
@@ -330,7 +380,7 @@ p2 <- ggplot() +
   theme_bw()
 
 p3 <- ggplot() +
-  geom_tile(data = data[data$clust < 2 & data$x < -121 & data$y < 39.8,],
+  geom_tile(full_data = full_data[full_data$clust < 2 & full_data$x < -121 & full_data$y < 39.8,],
             aes(x = x, y = y, fill = CBI_bc)) +
   scale_fill_distiller(type = "div", palette = "Spectral") +
   ggtitle("mean gap size") +
@@ -340,7 +390,7 @@ p3 <- ggplot() +
 p3
 
 p4 <- ggplot() +
-  geom_tile(data = data[data$fire_name == "dixie",],
+  geom_tile(full_data = full_data[full_data$fire_name == "dixie",],
             aes(x = x, y = y, fill = CBI_bc)) +
   scale_fill_distiller(type = "div", palette = "Spectral") +
   ggtitle("fire severity") +
@@ -351,9 +401,9 @@ p4
 
 plot_grid(p1, p2, p3, p4, nrow = 2)
 
-ggplot(full_data) +
+ggplot(full_full_data) +
   geom_density(aes(x = CBI_bc, fill = own_type), alpha = 0.4) +
   theme_bw()
 
-mean(as.numeric(full_data[full_data$own_type == "Private Industrial", ][["CBI_bc"]]), na.rm = TRUE)
-mean(as.numeric(full_data[full_data$own_type == "Federal", ][["CBI_bc"]]), na.rm = TRUE)
+mean(as.numeric(full_full_data[full_full_data$own_type == "Private Industrial", ][["CBI_bc"]]), na.rm = TRUE)
+mean(as.numeric(full_full_data[full_full_data$own_type == "Federal", ][["CBI_bc"]]), na.rm = TRUE)

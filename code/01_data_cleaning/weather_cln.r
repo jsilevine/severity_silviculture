@@ -10,11 +10,10 @@
 ## https://developers.synopticdata.com/mesonet/
 ## api_token argument required for multiple functions, see below
 
-
 ##---------------------------------------------------------------
 ## 0. Load prereq libraries and set working directory
 ##---------------------------------------------------------------
-library(rgdal)
+
 library(sf)
 library(fasterize)
 library(raster)
@@ -31,7 +30,9 @@ library(doParallel)
 library(doSNOW)
 library(progress)
 library(ggnewscale)
-setwd("../")
+library(terra)
+
+source("code/utility/utility_functions.r")
 
 ##---------------------------------------------------------------
 ## 1. Function definition
@@ -137,7 +138,7 @@ pull_fire_weather <- function(fire_name, perims, buffer_dist = 20000,
   }
 
   ## get fire start and end times
-  daily_burned <- as.data.frame(fread(paste0("data/fire_progression/", fire_name, "_daily_burned.csv")))
+  daily_burned <- as.data.frame(fread(paste0("data/fire_progression/smooth_round/", fire_name, "_progression.csv")))
   ## deal with chron not being able to read itself when character
   daily_burned$datetime <- as.chron(daily_burned$datetime)
   endtime <- max(daily_burned$datetime, na.rm = TRUE)
@@ -218,6 +219,7 @@ calc_time_avgd_weather <- function(fire_name, perims, return = FALSE, buffer_dis
   print("Pulling weather data from API")
   weather_data <- pull_fire_weather(fire_name, perims = perims,
                                     buffer_dist = buffer_dist)
+
   b <- TRUE
   while (b) {
     stations <- read.csv("data/weather/stations/stations.csv", row.names = 1)
@@ -228,12 +230,12 @@ calc_time_avgd_weather <- function(fire_name, perims, return = FALSE, buffer_dis
       b <- FALSE
     } else {
       buffer_dist <- buffer_dist + 5000
-      weather_data <- pull_fire_weather(fire, perims = perims, buffer_dist = buffer_dist)
+      weather_data <- pull_fire_weather(fire_name, perims = perims, buffer_dist = buffer_dist)
     }
   }
 
   fire_name <- gsub(" ", "", fire_name)
-  daily_burned <- as.data.frame(fread(paste0("data/fire_progression/", fire_name, "_daily_burned.csv")))
+  daily_burned <- as.data.frame(fread(paste0("data/fire_progression/smooth_round/", fire_name, "_progression.csv")))
   daily_burned$datetime <- as.chron(daily_burned$datetime)
   step_times <- unique(daily_burned$datetime)[!is.na(unique(daily_burned$datetime))]
   step_times <- chron(step_times[order(step_times)])
@@ -303,13 +305,19 @@ calc_station_distances <- function(fire_name, return = FALSE) {
   fire_name <- gsub(" ", "", fire_name)
   ## read station data
   stations <- read.csv(paste0("data/weather/", fire_name, "_weather/stations.csv"), row.names = 1)
-  stations$lon <- as.numeric(stations$lon)
-  stations$lat <- as.numeric(stations$lat)
+  stations_sf <- st_as_sf(stations, coords = c("lon", "lat"), crs = st_crs(4326))
+  stations_sf <- st_transform(stations_sf, crs = st_crs(3310))
+  stations <- as.data.frame(stations_sf)[,1:2]
+  stations <- cbind(stations, st_coordinates(stations_sf))
+
   ## read daily burned data
-  daily_burned <- as.data.frame(fread(paste0("data/fire_progression/", fire_name, "_daily_burned.csv")))
+  db <- rast(paste0("data/fire_progression/smooth_round/", fire_name, "_progression.tif"))
+  template <- rast(readRDS("data/templates/isforest.rds"))
+  db <- snap_to_template(db, template)
+  daily_burned <- as.data.frame(db, xy = TRUE)
 
   distances <- pointDistance(as.matrix(daily_burned[,c("x", "y")]),
-                             as.matrix(stations[, c("lon","lat")]), lonlat = TRUE)
+                             as.matrix(stations[, c("X","Y")]), lonlat = FALSE)
   colnames(distances) <- stations$st_id
   saveRDS(distances, paste0("data/weather/", fire_name, "_weather/station_distances.rds"))
   if(return) return(distances)
@@ -317,6 +325,7 @@ calc_station_distances <- function(fire_name, return = FALSE) {
 
 ## function to calculate weighted average weather data for each point in fire perimeter
 calc_weighted_weather_avgs <- function(fire_name, ncores = 6, return = FALSE) {
+
   fire_name <- gsub(" ", "", fire_name)
   ## load weather data
   weather_dir <- paste0("data/weather/", fire_name, "_weather")
@@ -330,25 +339,30 @@ calc_weighted_weather_avgs <- function(fire_name, ncores = 6, return = FALSE) {
 
   ## load elevation data
   print("Reading topography data")
-  topography <- fread("data/Topography/derived/topography.csv")
-  topography <- topography[, c("x", "y", "elevation")]
 
-  ## load daily burned data
-  daily_burned <- as.data.frame(fread(paste0("data/fire_progression/", fire_name, "_daily_burned.csv")))
-  daily_burned$datetime <- as.character(as.chron(daily_burned$datetime))
-  dts <- unique(daily_burned$datetime)[order(unique(daily_burned$datetime))]
+  db <- rast(paste0("data/fire_progression/smooth_round/", fire_name, "_progression.tif"))
+  template <- rast(readRDS("data/templates/isforest.rds"))
+  db <- snap_to_template(db, template)
+
+  plot(db)
+
+  elev <- rast("data/Topography/derived/dem.tif")
 
   ## merge topography and daily burned data
   ## need to round to account for small discrepancies in raster centerpoints
   ## (shouldn't affect anything but would love to fix)
-  topography$y <- round(topography$y, 5)
-  topography$x <- round(topography$x, 5)
-  daily_burned <- as.data.table(daily_burned)
-  daily_burned$y <- round(daily_burned$y, 5)
-  daily_burned$x <- round(daily_burned$x, 5)
+  daily_burned <- as.data.table(db, xy = TRUE)
+  topography <- as.data.table(elev, xy = TRUE)
   daily_burned <- as.data.frame(merge(daily_burned, topography, by = c("x", "y"),
                                       all.x = TRUE, all.y = FALSE))
-  max_elev <- max(topography$elevation)
+  colnames(daily_burned)[3:4] <- c("datetime", "elevation")
+
+  daily_burned$datetime <- round_to_nearest(daily_burned$datetime)
+
+  max_elev <- max(daily_burned$elevation)
+
+  daily_burned$datetime <- as.character(as.chron(daily_burned$datetime))
+  dts <- unique(daily_burned$datetime)[order(unique(daily_burned$datetime))]
 
   ## load distances
   distances <- readRDS(paste0(weather_dir, "/station_distances.rds"))
@@ -432,15 +446,15 @@ plot_stations <- function(perims) {
   stations_sf <- stations_sf[as.data.frame(stations_sub)[,1],]
 
   ggplot() +
-    basemap_gglayer(ext = st_bbox(perim_buffer), map_type = "terrain_bg") +
+    #basemap_gglayer(ext = st_bbox(perim_buffer), map_type = "terrain_bg") +
     scale_fill_identity() +
     new_scale_fill() +
     geom_sf(data = perims, alpha = 1, aes(fill = as.factor(FIRE_NA)), color = NA) +
     geom_sf(data = stations_sf, color = "black", size = 3) +
     scale_fill_manual(values = c("#fb9a99","#33a02c", "#fdbf6f", "#1f78b4", "#e31a1c")) +
     theme_bw() +
-    scale_x_continuous(expand = c(0,0)) +
-    scale_y_continuous(expand = c(0,0)) +
+    scale_x_continuous(expand = c(0,0.1)) +
+    scale_y_continuous(expand = c(0,0.1)) +
     ggtitle("RAWS station positions relative to fire perimeters") +
     theme(axis.title = element_blank(),
           legend.title = element_blank(),
@@ -454,25 +468,32 @@ plot_stations <- function(perims) {
 ## processing
 perims <- st_read("data/perimeters/all_perimiters.shp")
 
+plot_stations(perims)
+ggsave("plots/raws_locations.pdf")
+
+fire_list <- c("dixie", "north complex", "sugar", "sheep", "walker")
+
 for (fire in fire_list) {
   calc_time_avgd_weather(fire, perims = perims)
   print("Calculating distance matrix")
   calc_station_distances(fire)
-  calc_weighted_weather_avgs(fire, ncores = 4)
+  calc_weighted_weather_avgs(fire, ncores = 2)
 }
 
-## plotting
-station_locations <- plot_stations(perims = perims)
-station_locations
 
-test <- read.csv("data/weather/northcomplex_weather/complete_weather.csv", row.names = 1)
-ggplot(test, aes(x = x, y = y, color = avg_air_temp)) +
-  geom_tile() +
-  theme_bw()
+for (i in 1:length(fire_list)) {
 
-test2 <- read.csv("data/fire_progression//northcomplex_daily_burned.csv")
-ggplot(test2, aes(x = x, y = y, color = datetime)) +
-  geom_tile() +
-  theme_bw()
+  fire_name <- gsub(" ", "", fire_list[i])
+  weather_dir <- paste0("data/weather/", fire_name, "_weather")
+  if (i == 1) {
+    full_weather <- read.csv(paste0(weather_dir, "/complete_weather.csv"))
+    full_weather$fire_name <- fire_list[i]
+  } else {
+    nweather <- read.csv(paste0(weather_dir, "/complete_weather.csv"))
+    nweather$fire_name <- fire_list[i]
+    full_weather <- rbind(full_weather, nweather)
+  }
 
+}
 
+fwrite(full_weather, "data/weather/full_weather.csv")

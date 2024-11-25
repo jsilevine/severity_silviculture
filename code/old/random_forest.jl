@@ -1,7 +1,7 @@
 using CSV, DataFrames, MLJ, MLJDecisionTreeInterface,
     DecisionTree, Plots, StatsBase, Random, MLJBase,
     JLD2, Shapley, Shapley.ComputationalResources,
-    NaNStatistics, Loess
+    NaNStatistics, Loess, Rdata
 
 ## load in data
 data = CSV.read("../data/complete_data.csv", DataFrame);
@@ -24,7 +24,7 @@ mean(data[data.own_type .== "Federal" .&& data.elevation .< maximum(data[data.ow
 ## create grid for kfold cross validation
 ##---------------------------------------------------------------
 
-bb = CSV.read("../data/autocor_scale.csv", DataFrame)[1,2];
+bb = load("../data/autocor_scale_m.rds")
 
 fire_ids = unique(data.fire_name);
 
@@ -169,7 +169,7 @@ folds_formatted = load_object("../data/folds_formatted.jld2");
 data.holdout .= 1
 data[vcat(folds_formatted[1][1], folds_formatted[1][2]), :holdout] .= 0
 
-data.hs_class .= "low-none";
+data.hs_class .= "not-high";
 data[data.CBI_bc .> 2.25, :hs_class] .= "high";
 data[data.CBI_bc .< 2.25 .&& data.CBI_bc .> 1.25, :hs_class] .= "med";
 

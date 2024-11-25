@@ -31,18 +31,6 @@ saveRDS(sugar_perim, "data/perimeters/sugar_perim.rds")
 full_perims <- rbind(dixie_perim, northcomplex_perim, sheep_perim, walker_perim, sugar_perim)
 st_write(full_perims, "data/perimeters/all_perimiters.shp", append = FALSE)
 
-ggplot(dixie_perim) +
-  ylim(c(min(dixie_daily_severity$y), max(dixie_daily_severity$y))) +
-  xlim(c(min(dixie_daily_severity$x), max(dixie_daily_severity$x))) +
-  geom_tile(data = dixie_daily_severity, aes(x = x, y = y, fill = time)) +
-  geom_sf(alpha = 0.1, color = "gray") +
-  theme_bw()
-
-ggplot(walker_perim) +
-  geom_raster(data = as.data.frame(as(rdnbr, "SpatialPixelsDataFrame")), aes(x = x, y = y, fill = "walker_rdnbr")) +
-  geom_sf(alpha = 0.1, color = "gray") +
-  theme_bw()
-
 ## save perimeters in format usable by GEE script (Parks et al. 2019)
 gee_perims <- full_perims[, c("YEAR_", "FIRE_NAME")]
 colnames(gee_perims)  <- c("Fire_Year", "Fire_Name", "Shape")
@@ -53,30 +41,67 @@ for (i in 1:nrow(gee_perims)) {
 }
 st_write(gee_perims, "data/perimeters/gee_perimeters.shp", append = FALSE)
 
+
 ##---------------------------------------------------------------
-## get severity data from standard perimeters, no daily data
+## Severity
 ##---------------------------------------------------------------
-fire_name <- "dixie"
-pull_full_severity <- function(fire_name) {
-  perim_data <- readRDS(paste0("data/perimeters/", fire_name, "_perim.rds"))
-  rdnbr <- raster(paste0("data/cbi/ravg/ravg_", perim_data$YEAR_[1], "_cbi4.tif"))
-  perim_data <- st_transform(perim_data, crs = crs(rdnbr))
-  rdnbr <- crop(rdnbr, perim_data)
-  mask <- fasterize(perim_data, rdnbr)
-  sev <- mask(rdnbr, mask)
-  sev[sev > 4]  <- NA
-  return(sev)
+
+template <- rast("data/templates/isforest.tif")
+
+sevfiles <- list.files("data/cbi")
+
+for (i in 1:length(sevfiles)) {
+
+  fire_name <- strsplit(tolower(strsplit(sevfiles[i], "_CBI_")[[1]][1]), "_")[[1]][1]
+
+  severity <- rast(paste0("data/cbi/", sevfiles[i]))
+  severity <- snap_to_template(severity, template)
+  severity_df <- as.data.frame(severity, xy = TRUE, na.rm = TRUE)
+  writeRaster(severity, paste0("data/cbi/", fire_name, "_processed.tif"), overwrite = TRUE)
+  if (i == 1) {
+    severity_full_df <- severity_df
+  } else {
+    severity_full_df <- rbind(severity_full_df, severity_df)
+  }
+  write.csv(severity_df, paste0("data/cbi/", fire_name, "_processed.csv"))
+
 }
 
 
-dixie_severity <- pull_full_severity("dixie")
-northcomplex_severity <- pull_full_severity("northcomplex")
-sheep_severity <- pull_full_severity("sheep")
-walker_severity <- pull_full_severity("walker")
-sugar_severity <- pull_full_severity("sugar")
 
-saveRDS(dixie_severity, "data/cbi/ravg/dixie_cbi_ravg.rds")
-saveRDS(northcomplex_severity, "data/cbi/ravg/northcomplex_cbi_ravg.rds")
-saveRDS(sheep_severity, "data/cbi/ravg/sheep_cbi_ravg.rds")
-saveRDS(walker_severity, "data/cbi/ravg/walker_cbi_ravg.rds")
-saveRDS(sugar_severity, "data/cbi/ravg/sugar_cbi_ravg.rds")
+
+
+
+
+##---------------------------------------------------------------
+## OLD/SCRATCH
+##---------------------------------------------------------------
+
+##---------------------------------------------------------------
+## get severity data from standard perimeters, no daily data
+##---------------------------------------------------------------
+
+## fire_name <- "dixie"
+## pull_full_severity <- function(fire_name) {
+##   perim_data <- readRDS(paste0("data/perimeters/", fire_name, "_perim.rds"))
+##   cbi <- raster(paste0("data/cbi/ravg/ravg_", perim_data$YEAR_[1], "_cbi4.tif"))
+##   perim_data <- st_transform(perim_data, crs = crs(rdnbr))
+##   rdnbr <- crop(rdnbr, perim_data)
+##   mask <- fasterize(perim_data, rdnbr)
+##   sev <- mask(rdnbr, mask)
+##   sev[sev > 4]  <- NA
+##   return(sev)
+## }
+
+
+## dixie_severity <- pull_full_severity("dixie")
+## northcomplex_severity <- pull_full_severity("northcomplex")
+## sheep_severity <- pull_full_severity("sheep")
+## walker_severity <- pull_full_severity("walker")
+## sugar_severity <- pull_full_severity("sugar")
+
+## saveRDS(dixie_severity, "data/cbi/ravg/dixie_cbi_ravg.rds")
+## saveRDS(northcomplex_severity, "data/cbi/ravg/northcomplex_cbi_ravg.rds")
+## saveRDS(sheep_severity, "data/cbi/ravg/sheep_cbi_ravg.rds")
+## saveRDS(walker_severity, "data/cbi/ravg/walker_cbi_ravg.rds")
+## saveRDS(sugar_severity, "data/cbi/ravg/sugar_cbi_ravg.rds")
