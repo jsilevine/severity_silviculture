@@ -612,4 +612,4 @@ pg_wx_topo <- plot_grid(pg_wx, pg_topo, ncol = 1)
 
 plot_grid(pg_hdw, pg_wx_topo, ncol = 1, rel_heights = c(0.6, 0.4), align = "hv")
 
-ggsave("plots/figureS2.pdf")
+ggsave("plots/figureS2/figureS2.pdf")

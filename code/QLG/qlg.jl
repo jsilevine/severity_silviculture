@@ -1,3 +1,8 @@
+using Pkg
+
+
+
+
 using Base: index_shape
 using CSV, DataFrames, MLJ, MLJDecisionTreeInterface,
     DecisionTree, Plots, StatsBase, Random, MLJBase,

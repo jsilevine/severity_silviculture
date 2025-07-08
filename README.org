@@ -1,0 +1,47 @@
+#+title: README
+#+author: Jacob I. Levine
+
+This repository accompanies the publication of '/Extreme weather magnifies the effects of forest structure on wildfire, driving increased severity in industrial forests/' in _[insert journal name after publication]_ by Jacob I. Levine, Brandon M. Collins, Michelle Coppoletta, and Scott L. Stephens. [[insert link after publication][link]]
+
+* Repository Structure
+The repository is organized as follows:
++ ~data/~: Contains raw and processed datasets used in the study (*though see note below*).
++ ~code/~: Includes fall scripts used for data processing, analysis, and visualization.
++ ~plots/~: Provides all main text and supplementary figure files, including intermediate, unpublished, and illustrator files
++ ~Manifest.toml/Project.toml~: =julia= package versioning and session information for reproducability.
+
+** Note on data availability
+The data were too large to upload and version control using Git and Github. Instead, we provide a .zip repository of the data as a separate Zenodo submission at =doi:____=. To download, either navigate to the [[][Zenodo submission]] directly, or using bash:
+
+#+BEGIN_SRC bash
+#!/bin/bash
+
+# Download dataset from Zenodo
+wget -O data.zip "https://zenodo.org/record/1234567/files/your_data_file.zip?download=1"
+
+# Unzip into the main directory, so that the scripts will function as intended.
+unzip data.zip -d severity_and_silviculture/data
+#+END_SRC
+
+To use the directory, simply copy the dataset into this repository and label it "data/". The scripts will then reference individual files within this directory.
+
+While the repository on Zenodo contains most of the raw data used in the analyses described by the paper, we were unable to provide some raw data for direct download. In particular, we could not provide raw LiDAR or forest ownership data. However, we do provide all intermediate data, meaning the processed LiDAR data and ownership data are available within our study area (defined as the boundaries of the Plumas National Forest and adjacent private land). The absence of this data means that some of the data cleaning scripts will not function properly. However, we retain these scripts as documentation of the processing methodology, and all data analysis and visualization scripts should work as intended.
+
+* Requirements
+Running the code in this repository requires functioning distributions of both =R= and =julia=. The analyses reported in the accompanying manuscript were run using =R= version =4.4.1= and =julia= version =1.11.1=. All session and package versioning information for =julia= is available in the ~Manifest.toml~ and ~Project.toml~ files.
+
+* Usage
+To reproduce the analyses and figures from the paper, run the scripts contained in the ~code/~ repository in the order indicated by the file names (noting that some of the scripts in ~code/01_data_cleaning/~ will not run because of raw data availability). Re-running the scripts will overwrite some of the output files in both the ~data/~ and ~plots/~ directories. Unless the user makes major changes, these overwritten files should be similar (in most cases identical) to existing files.
+
+* Citation
+If you use the original data or methods in your research, please cite the associated paper:
+#+BEGIN_QUOTE
+Jacob. I Levine, Brandon M. Collins, Michelle Coppoletta, Scott L. Stephens. (2025). Extreme weather magnifies the effects of forest structure on wildfire, driving increased severity in industrial forests. *[insert journal name after publication]*. DOI: [insert DOI after publication]
+#+END_QUOTE
+
+* Contact
+For questions or issues, either message Jacob Levine through Github (@jsilevine), or contact:
++ Jacob I. Levine
++ jacob.levine@utah.edu
++ Wilkes Center for Climate Science and Policy, University of Utah, Salt Lake City UT
++ [[levine-ecology.com][levine-ecology.com]]

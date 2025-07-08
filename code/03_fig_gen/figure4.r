@@ -1,232 +1,160 @@
-
-##---------------------------------------------------------------
-## Density plots comparing private and public land ownership
-##---------------------------------------------------------------
+library(speedglm)
 library(data.table)
 library(ggplot2)
 library(cowplot)
+library(paletteer)
+library(MetBrewer)
 
 data <- fread("data/complete_data.csv")
 data <- data[complete.cases(data),]
-set.seed(1)
+bootstrap_results <- read.csv("data/bootstraps/bootstrap_coefs_180.csv")
+naive_model <- readRDS("data/model_objects/naive_model_structure_180.rds")
+naive_model2 <- readRDS("data/model_objects/naive_model_structure.rds")
+AIC(naive_model) < AIC(naive_model2)
 
-dsub_private <- data[own_type == "Private Industrial"]
-#dsub_private <- dsub_private[sample(1:nrow(dsub_private), 598409)]
-dsub_public <- data[own_type == "Federal"]
-#dsub_public <- dsub_public[sample(1:nrow(dsub_public), 598409)]
+## scale continuous predictors
+data$mean_dens_180_scaled <- scale(data$mean_dens_180)
+data$clust_180_scaled <- scale(data$clust_180)
+data$mean_ht_180_scaled <- scale(data$mean_ht_180)
+data$mean_area_180_scaled <- scale(data$mean_area_180)
+data$em_scaled <- scale(data$em)
+data$hdw_scaled <- scale(data$hdw)
+data$avg_fuel_moisture_scaled <- scale(data$avg_fuel_moisture)
+data$cwd_scaled <- scale(data$cwd)
+data$slope_scaled <- scale(data$slope)
+data$tpi_scaled <- scale(data$tpi)
+data$heat_load_scaled <- scale(data$heat_load)
+data$prev_sev_scaled <- scale(data$prev_sev)
 
-dprivate <- density(dsub_private$mean_dens_30, n = 10000, from = min(data$mean_dens_30), to = max(data$mean_dens_30))
-dpublic <- density(dsub_public$mean_dens_30, n = 10000, from = min(data$mean_dens_30), to = max(data$mean_dens_30))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-dens_30 <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x > 100,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x < 100,], linewidth = 2, color = "#08519c") +
-  scale_x_continuous(expand = c(0,0), limits = c(0, 350)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Stem density (45m)") +
-  ylab("Density (Private Industrial - Public)") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-dens_30
+head(bootstrap_results)
+colnames(bootstrap_results)[1] <- "intercept"
 
-dprivate <- density(dsub_private$clust_30, n = 10000, from = min(data$clust_30), to = max(data$clust_30))
-dpublic <- density(dsub_public$clust_30, n = 10000, from = min(data$clust_30), to = max(data$clust_30))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-clust_30 <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x < 1,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x > 1,], linewidth = 2, color = "#08519c") +
-  scale_x_continuous(expand = c(0,0), limits = c(0.5, 1.5)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Spatial regularity (45m)") +
-  ylab("Density (Private Industrial - Public)") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-clust_30
+results_summary <- data.frame(variable = colnames(bootstrap_results),
+                              mean = numeric(ncol(bootstrap_results)),
+                              ci_lower = numeric(ncol(bootstrap_results)),
+                              ci_upper = numeric(ncol(bootstrap_results)))
+
+for (i in 1:nrow(results_summary)) {
+
+  results_summary[i,"mean"] <- mean(bootstrap_results[,results_summary[i,"variable"]])
+  results_summary[i,"ci_lower"] <- quantile(bootstrap_results[,results_summary[i,"variable"]], 0.025)
+  results_summary[i,"ci_upper"] <- quantile(bootstrap_results[,results_summary[i,"variable"]], 0.975)
+
+}
+
+results_summary
+
+write.csv(results_summary, "data/model_objects/180m_results_summary.csv")
+
+gen_pdata <- function(var1, var2 = NA, var2_levels = NA, npts = 100) {
+
+  vars <- c("mean_dens_180_scaled", "hdw_scaled", "clust_180_scaled", "mean_ht_180_scaled",
+            "mean_area_180_scaled", "em_scaled", "avg_fuel_moisture_scaled", "cwd_scaled", "tpi_scaled",
+            "heat_load_scaled", "prev_sev_scaled", "slope_scaled")
 
 
-dprivate <- density(dsub_private$mean_ht_30, n = 10000, from = min(data$mean_ht_30), to = max(data$mean_ht_30))
-dpublic <- density(dsub_public$mean_ht_30, n = 10000, from = min(data$mean_ht_30), to = max(data$mean_ht_30))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-ht_30 <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0 & pd$x < 20,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 20,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0,], linewidth = 2, color = "#08519c") +
-  scale_x_continuous(expand = c(0,0), limits = c(5, 45)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Mean stem height (45m)") +
-  ylab("Density (Private Industrial - Public)") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-ht_30
+  if (!is.na(var2)) {
 
-dprivate <- density(dsub_private$mean_area_30, n = 40000, from = min(data$mean_area_30), to = max(data$mean_area_30))
-dpublic <- density(dsub_public$mean_area_30, n = 40000, from = min(data$mean_area_30), to = max(data$mean_area_30))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-area_30 <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0,], linewidth = 2, color = "#08519c") +
-  scale_x_continuous(expand = c(0,0), limits = c(0, 2000)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Mean gap area (45m)") +
-  ylab("Density (Private Industrial - Public)") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-area_30
+    pdata <- data.frame(x = numeric(npts * length(var2_levels)))
+    indx <- which(colnames(data) == var1)
 
-dprivate <- density(dsub_private$mean_dens_180, n = 10000, from = min(data$mean_dens_180), to = max(data$mean_dens_180))
-dpublic <- density(dsub_public$mean_dens_180, n = 10000, from = min(data$mean_dens_180), to = max(data$mean_dens_180))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-dens_180 <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0 & pd$x < 300,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x < 100,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x >= 100,], linewidth = 2, color = "#08519c") +
-  scale_x_continuous(expand = c(0,0), limits = c(0, 350)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Stem density (390m)") +
-  ylab("Density (Private Industrial - Public)") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-dens_180
+    pdata[,var1] <- rep(seq(min(data[[indx]]), max(data[[indx]]), length.out = npts), times = length(var2_levels))
+    pdata[,var2] <- rep(var2_levels, each = npts)
 
-dprivate <- density(dsub_private$clust_180, n = 10000, from = min(data$clust_180), to = max(data$clust_180))
-dpublic <- density(dsub_public$clust_180, n = 10000, from = min(data$clust_180), to = max(data$clust_180))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-clust_180 <- ggplot(data = pd, aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  #geom_line(data = pd, linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0,], linewidth = 2, color = "#08519c") +
-  #geom_line(data = pd[pd$dif >= 0 & pd$x > 1,], linewidth = 2, color = "#08519c") +
-  scale_x_continuous(expand = c(0,0), limits = c(0.5, NA)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Spatial regularity (390m)") +
-  ylab("Density (Private Industrial - Public)") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-clust_180
+    ocols <- vars[!(vars %in% c(var1, var2))]
+    ocols
 
-dprivate <- density(dsub_private$mean_ht_180, n = 10000, from = min(data$mean_ht_180), to = max(data$mean_ht_180))
-dpublic <- density(dsub_public$mean_ht_180, n = 10000, from = min(data$mean_ht_180), to = max(data$mean_ht_180))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-ht_180 <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0 & pd$x < 20,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 20,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0,], linewidth = 2, color = "#08519c") +
-  scale_x_continuous(expand = c(0,0), limits = c(5, 45)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Mean stem height (390m)") +
-  ylab("Density (Private Industrial - Public)") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-ht_180
+    for (i in 1:length(ocols)) {
+      pdata[,ocols[i]] <- 0
+    }
 
-dprivate <- density(dsub_private$mean_area_30, n = 40000, from = min(data$mean_area_180), to = max(data$mean_area_180))
-dpublic <- density(dsub_public$mean_area_30, n = 40000, from = min(data$mean_area_180), to = max(data$mean_area_180))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-area_180 <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0,], linewidth = 2, color = "#08519c") +
-  scale_x_continuous(expand = c(0,0), limits = c(0, 2000)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Mean gap area (390m)") +
-  ylab("Density (Private Industrial - Public)") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-area_180
+  } else {
+
+    pdata <- data.frame(x = numeric(npts))
+    indx <- which(colnames(data) == var1)
+
+    pdata[,var1] <- seq(min(data[[indx]]), max(data[[indx]]), length.out = npts)
+
+    ocols <- vars[!(vars %in% c(var1))]
+    ocols
+
+    for (i in 1:length(ocols)) {
+      pdata[,ocols[i]] <- 0
+    }
+
+  }
+
+    pdata <- pdata[,2:ncol(pdata)]
+    pdata$fire_name <- "dixie"
+
+    pdata[,"p_mean"] <- predict(naive_model, newdata = pdata)
+
+    head(pdata)
+
+    for (i in 1:nrow(pdata)) {
+
+      pvec <- numeric(nrow(bootstrap_results))
+      for (j in 1:nrow(bootstrap_results)) {
+
+        pvec[j] <-
+          bootstrap_results[j,"intercept"] +
+          bootstrap_results[j,"mean_dens_180_scaled"] * pdata[i, "mean_dens_180_scaled"] +
+          bootstrap_results[j,"hdw_scaled"] * pdata[i, "hdw_scaled"] +
+          bootstrap_results[j,"clust_180_scaled"] * pdata[i, "clust_180_scaled"] +
+          bootstrap_results[j,"mean_ht_180_scaled"] * pdata[i, "mean_ht_180_scaled"] +
+          bootstrap_results[j,"mean_area_180_scaled"] * pdata[i, "mean_area_180_scaled"] +
+          bootstrap_results[j,"em_scaled"] * pdata[i, "em_scaled"] +
+          bootstrap_results[j,"avg_fuel_moisture_scaled"] * pdata[i, "avg_fuel_moisture_scaled"] +
+          bootstrap_results[j,"cwd_scaled"] * pdata[i, "cwd_scaled"] +
+          bootstrap_results[j,"slope_scaled"] * pdata[i, "slope_scaled"] +
+          bootstrap_results[j,"tpi_scaled"] * pdata[i, "tpi_scaled"] +
+          bootstrap_results[j,"heat_load_scaled"] * pdata[i, "heat_load_scaled"] +
+          bootstrap_results[j,"prev_sev_scaled"] * pdata[i, "prev_sev_scaled"] +
+          bootstrap_results[j,"hdw_scaled.mean_dens_180_scaled"] * pdata[i, "mean_dens_180_scaled"] * pdata[i, "hdw_scaled"] +
+          bootstrap_results[j,"hdw_scaled.mean_ht_180_scaled"] * pdata[i, "mean_ht_180_scaled"] * pdata[i, "hdw_scaled"] +
+          bootstrap_results[j,"hdw_scaled.mean_area_180_scaled"] * pdata[i, "mean_area_180_scaled"] * pdata[i, "hdw_scaled"] +
+          bootstrap_results[j,"hdw_scaled.em_scaled"] * pdata[i, "em_scaled"] * pdata[i, "hdw_scaled"]
+
+      }
+
+      pdata[i,"p_lower"] <- quantile(pvec, 0.025)
+      pdata[i,"p_higher"] <- quantile(pvec, 0.975)
+      #pdata[i, "p_mean"] <- mean(pvec)
+
+    }
 
 
-dprivate <- density(dsub_private$em, n = 10000, from = min(data$em), to = max(data$em))
-dpublic <- density(dsub_public$em, n = 10000, from = min(data$em), to = max(data$em))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-em <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x > 10,], linewidth = 2, color = "#08519c") +
+    pdata_descaled <- pdata
+    for (i in 1:(ncol(pdata_descaled)-4)) {
+
+      cname <- gsub(pattern = "_scaled", x = colnames(pdata_descaled)[i], replacement = "")
+      colnames(pdata_descaled)[i] <- cname
+      indx <- which(colnames(data) == cname)
+      pdata_descaled[,i] <- pdata_descaled[,i] * sd(data[[indx]]) + mean(data[[indx]])
+
+    }
+    head(pdata_descaled)
+
+    ## transform predictions from log odds to probability
+    pdata_descaled$p_mean <- exp(pdata_descaled$p_mean) / (1 + exp(pdata_descaled$p_mean))
+    pdata_descaled$p_lower <- exp(pdata_descaled$p_lower) / (1 + exp(pdata_descaled$p_lower))
+    pdata_descaled$p_higher <- exp(pdata_descaled$p_higher) / (1 + exp(pdata_descaled$p_higher))
+
+  return(pdata_descaled)
+
+}
+
+pd_clust <- gen_pdata("clust_180_scaled")
+pd_clust$prev_sev <- as.factor(pd_clust$prev_sev)
+
+clust_pred <- ggplot(data = pd_clust, aes(x = clust_180, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher), fill = "gray", alpha = 0.9) +
+  geom_line(color = "black", linewidth = 2) +
   scale_x_continuous(expand = c(0,0)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Ladder fuels index") +
-  ylab("Density (Private Industrial - Public)") +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 1)) +
+  xlab("Spatial homogeneity") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
   theme_bw() +
   theme(
     panel.grid.minor = element_blank(),
@@ -236,22 +164,23 @@ em <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
     axis.line.x.bottom = element_line(size = 1),
     axis.line.y.left = element_line(size = 1),
     axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-em
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+clust_pred
 
+## Hot dry windy
+pd_hdw <- gen_pdata("hdw_scaled")
 
-dprivate <- density(dsub_private$hdw, n = 10000, from = min(data$hdw), to = max(data$hdw))
-dpublic <- density(dsub_public$hdw, n = 10000, from = min(data$hdw), to = max(data$hdw))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-hdw <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0 & pd$x < 100,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x > 10,], linewidth = 2, color = "#08519c") +
+hdw_pred <- ggplot(data = pd_hdw, aes(x = hdw, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher), fill = "gray", alpha = 0.9) +
+  geom_line(color = "black", size = 1) +
   scale_x_continuous(expand = c(0,0)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Hot-dry-windy index") +
-  ylab("Density (Private Industrial - Public)") +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 1)) +
+  xlab("Hot dry windy (HDW) index") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
   theme_bw() +
   theme(
     panel.grid.minor = element_blank(),
@@ -261,28 +190,23 @@ hdw <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
     axis.line.x.bottom = element_line(size = 1),
     axis.line.y.left = element_line(size = 1),
     axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-hdw
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+hdw_pred
 
-dprivate <- density(dsub_private$avg_fuel_moisture, n = 30000, from = min(data$avg_fuel_moisture), to = max(data$avg_fuel_moisture))
-dpublic <- density(dsub_public$avg_fuel_moisture, n = 30000, from = min(data$avg_fuel_moisture), to = max(data$avg_fuel_moisture))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-fuels <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0 & pd$x < 4,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 4 & pd$x < 5,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 5 & pd$x < 7,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 7,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x < 3,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x > 3 & pd$x < 4.5,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x > 4.5 & pd$x < 5.5,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x > 5.5 & pd$x < 10,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x > 10,], linewidth = 2, color = "#08519c") +
-  scale_x_continuous(expand = c(0,0), limits = c(0, 15)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Mean fuel moisture (%)") +
-  ylab("Density (Private Industrial - Public)") +
+## mean gap area
+pd_area <- gen_pdata("mean_area_180_scaled", npts = 1000)
+
+area_pred <- ggplot(data = pd_area, aes(x = mean_area_180, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher), fill = "gray", alpha = 0.9) +
+  geom_line(color = "black", linewidth = 2, linetype = "dashed") +
+  scale_x_continuous(expand = c(0,0), limits = c(NA, 10000)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 1)) +
+  xlab("Mean gap area") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
   theme_bw() +
   theme(
     panel.grid.minor = element_blank(),
@@ -292,329 +216,23 @@ fuels <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
     axis.line.x.bottom = element_line(size = 1),
     axis.line.y.left = element_line(size = 1),
     axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-fuels
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+area_pred
 
+## fuel moisture
+pd_fuel <- gen_pdata("avg_fuel_moisture_scaled")
 
-dprivate <- density(dsub_private$cwd, n = 10000, from = min(data$cwd), to = max(data$cwd))
-dpublic <- density(dsub_public$cwd, n = 10000, from = min(data$cwd), to = max(data$cwd))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-cwd <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 300 & pd$x < 430,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 480 & pd$x < 520,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 520 & pd$x < 550,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 550 & pd$x < 600,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 600 & pd$x < 690,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 695,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif > 0 & pd$x < 400,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif > 0 & pd$x > 400 & pd$x < 500,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif > 0 & pd$x > 500 & pd$x < 530,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif > 0 & pd$x > 530 & pd$x < 550,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif > 0 & pd$x > 585 & pd$x < 650,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif > 0 & pd$x > 650 & pd$x < 700,], linewidth = 2, color = "#08519c") +
-  geom_line(data = pd[pd$dif > 0 & pd$x > 700,], linewidth = 2, color = "#08519c") +
+fuel_pred <- ggplot(data = pd_fuel, aes(x = avg_fuel_moisture, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher), fill = "gray", alpha = 0.9) +
+  geom_line(color = "black", size = 1) +
   scale_x_continuous(expand = c(0,0)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Climate water deficit") +
-  ylab("Density (Private Industrial - Public)") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-cwd
-
-
-dprivate <- density(dsub_private$tpi, n = 10000, from = min(data$tpi), to = max(data$tpi))
-dpublic <- density(dsub_public$tpi, n = 10000, from = min(data$tpi), to = max(data$tpi))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-tpi <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0 & pd$x < 0,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 0,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0 & pd$x < 25,], linewidth = 2, color = "#08519c") +
-  scale_x_continuous(expand = c(0,0)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Topographic position index") +
-  ylab("Density (Private Industrial - Public)") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-tpi
-
-
-dprivate <- density(dsub_private$slope, n = 10000, from = min(data$slope), to = max(data$slope))
-dpublic <- density(dsub_public$slope, n = 10000, from = min(data$slope), to = max(data$slope))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-slope <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0 & pd$x < 20,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 20,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0,], linewidth = 2, color = "#08519c") +
-  scale_x_continuous(expand = c(0,0)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Slope (%)") +
-  ylab("Density (Private Industrial - Public)") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-slope
-
-
-dprivate <- density(dsub_private$heat_load, n = 10000, from = min(data$heat_load), to = max(data$heat_load))
-dpublic <- density(dsub_public$heat_load, n = 10000, from = min(data$heat_load), to = max(data$heat_load))
-pd <- data.frame(x = dprivate$x, dif = dprivate$y - dpublic$y)
-heat_load <- ggplot(data = pd[pd$dif < 0,], aes(x = x, y = dif)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_line(data = pd[pd$dif < 0 & pd$x < 0.8,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif < 0 & pd$x > 0.8,], linewidth = 2, color = "#2ca25f") +
-  geom_line(data = pd[pd$dif >= 0,], linewidth = 2, color = "#08519c") +
-  scale_x_continuous(expand = c(0,0)) +
-  #scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Heat Load") +
-  ylab("Density (Private Industrial - Public)") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank())
-heat_load
-
-plot_grid(dens_30, clust_30, ht_30, area_30,
-          dens_180, clust_180, ht_180, area_180,
-          em, hdw, fuels,
-          cwd, tpi, slope, heat_load, align = "hv")
-
-ggsave("plots/figure4b.pdf")
-
-
-##---------------------------------------------------------------
-##
-##---------------------------------------------------------------
-
-
-dens30 <- ggplot(data = dsub_private, aes(x = mean_dens_30)) +
-  geom_density(linewidth = 2, fill = "#6baed6", color = "#08519c", alpha =0.6) +
-  geom_density(data = dsub_public, linewidth = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
-  scale_x_continuous(expand = c(0,0), limits = c(0, 350)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.011)) +
-  xlab("Stem density (45m)") +
-  ylab("") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
-
-
-clust30 <- ggplot(data = dsub_private, aes(x = clust_30)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha =0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
-  scale_x_continuous(expand = c(0,0), limits = c(0.5, 1.5)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 6.2)) +
-  xlab("Stem clustering (45m)") +
-  ylab("") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
-clust30
-
-ht30 <- ggplot(data = dsub_private, aes(x = mean_ht_30)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha =0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
-  scale_x_continuous(expand = c(0,0), limits = c(5, 45)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.07)) +
-  xlab("Mean tree height (45m)") +
-  ylab("") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
-
-area30 <- ggplot(data = dsub_private, aes(x = mean_area_30)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha =0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
-  scale_x_continuous(expand = c(0,0), limits = c(0, 3500)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.005)) +
-  xlab("Mean gap area (45m)") +
-  ylab("") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
-
-
-dens180 <- ggplot(data = dsub_private, aes(x = mean_dens_180)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha =0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
-  scale_x_continuous(expand = c(0,0), limits = c(0, 350)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.014)) +
-  xlab("Stem density (195m)") +
-  ylab("") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
-
-clust180 <- ggplot(data = dsub_private, aes(x = clust_180)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha =0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
-  scale_x_continuous(expand = c(0,0), limits = c(0.5, 1.5)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 7.5)) +
-  xlab("Stem clustering (195m)") +
-  ylab("") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
-clust180
-
-ht180 <- ggplot(data = dsub_private, aes(x = mean_ht_180)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha =0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
-  scale_x_continuous(expand = c(0,0), limits = c(5, 45)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.09)) +
-  xlab("Mean tree height (195m)") +
-  ylab("") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
-
-area180 <- ggplot(data = dsub_private, aes(x = mean_area_180)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha =0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
-  scale_x_continuous(expand = c(0,0), limits = c(0, 3500)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.0055)) +
-  xlab("Mean gap area (195m)") +
-  ylab("") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
-
-
-em <- ggplot(data = dsub_private, aes(x = em)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha =0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
-  scale_x_continuous(expand = c(0,0)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.05)) +
-  xlab("Vertical fuel continuity") +
-  ylab("") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
-
-hdw <- ggplot(data = dsub_private, aes(x = hdw)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha =0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
-  scale_x_continuous(expand = c(0,0)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.018)) +
-  xlab("Hot dry windy index") +
-  ylab("") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
-
-fuels <- ggplot(data = dsub_private, aes(x = avg_fuel_moisture)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha =0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
-  scale_x_continuous(expand = c(0,0), limits = c(0, 15)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 1.1)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 1)) +
   xlab("Mean fuel moisture") +
-  ylab("") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
   theme_bw() +
   theme(
     panel.grid.minor = element_blank(),
@@ -624,15 +242,23 @@ fuels <- ggplot(data = dsub_private, aes(x = avg_fuel_moisture)) +
     axis.line.x.bottom = element_line(size = 1),
     axis.line.y.left = element_line(size = 1),
     axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+fuel_pred
 
-elev <- ggplot(data = dsub_private, aes(x = elevation)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha = 0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
+## cwd
+pd_cwd <- gen_pdata("cwd_scaled")
+
+cwd_pred <- ggplot(data = pd_cwd, aes(x = cwd, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher), fill = "gray", alpha = 0.9) +
+  geom_line(color = "black", size = 1) +
   scale_x_continuous(expand = c(0,0)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.0018)) +
-  xlab("Elevation") +
-  ylab("") +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 1)) +
+  guides(x.sec = "axis", y.sec = "axis") +
+  xlab("cwd") +
+  ylab("High severity probability") +
   theme_bw() +
   theme(
     panel.grid.minor = element_blank(),
@@ -642,15 +268,49 @@ elev <- ggplot(data = dsub_private, aes(x = elevation)) +
     axis.line.x.bottom = element_line(size = 1),
     axis.line.y.left = element_line(size = 1),
     axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+cwd_pred
 
-tpi <- ggplot(data = dsub_private, aes(x = tpi)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha = 0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
+## slope
+pd_slope <- gen_pdata("slope_scaled")
+
+slope_pred <- ggplot(data = pd_slope, aes(x = slope, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher), fill = "gray", alpha = 0.9) +
+  geom_line(color = "black", size = 1, linetype = "dashed") +
   scale_x_continuous(expand = c(0,0)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.045)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 1)) +
+  xlab("Slope") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(size = 20),
+    axis.text = element_text(size = 12),
+    axis.line.x.top = element_line(size = 1),
+    axis.line.x.bottom = element_line(size = 1),
+    axis.line.y.left = element_line(size = 1),
+    axis.line.y.right = element_line(size = 1),
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+slope_pred
+
+## topographic position index
+pd_tpi <- gen_pdata("tpi_scaled")
+
+tpi_pred <- ggplot(data = pd_tpi, aes(x = tpi, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher), fill = "gray", alpha = 0.9) +
+  geom_line(color = "black", size = 1) +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 1)) +
   xlab("Topographic position index") +
-  ylab("") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
   theme_bw() +
   theme(
     panel.grid.minor = element_blank(),
@@ -660,33 +320,23 @@ tpi <- ggplot(data = dsub_private, aes(x = tpi)) +
     axis.line.x.bottom = element_line(size = 1),
     axis.line.y.left = element_line(size = 1),
     axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+tpi_pred
 
-slope <- ggplot(data = dsub_private, aes(x = slope)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha = 0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
-  scale_x_continuous(expand = c(0,0)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 0.05)) +
-  xlab("Slope (%)") +
-  ylab("") +
-  theme_bw() +
-  theme(
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 20),
-    axis.text = element_text(size = 12),
-    axis.line.x.top = element_line(size = 1),
-    axis.line.x.bottom = element_line(size = 1),
-    axis.line.y.left = element_line(size = 1),
-    axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
+## heat load
+pd_heatload <- gen_pdata("heat_load_scaled")
 
-heat_load <- ggplot(data = dsub_private, aes(x = heat_load)) +
-  geom_density(size = 2, fill = "#6baed6", color = "#08519c", alpha = 0.6) +
-  geom_density(data = dsub_public, size = 2, fill = "#66c2a4", color = "#2ca25f", alpha = 0.6) +
+heatload_pred <- ggplot(data = pd_heatload, aes(x = heat_load, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher), fill = "gray", alpha = 0.9) +
+  geom_line(color = "black", size = 1) +
   scale_x_continuous(expand = c(0,0)) +
-  scale_y_continuous(expand = c(0,0.0), limits = c(0, 3.5)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 1)) +
   xlab("Heat load") +
-  ylab("") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
   theme_bw() +
   theme(
     panel.grid.minor = element_blank(),
@@ -696,13 +346,458 @@ heat_load <- ggplot(data = dsub_private, aes(x = heat_load)) +
     axis.line.x.bottom = element_line(size = 1),
     axis.line.y.left = element_line(size = 1),
     axis.line.y.right = element_line(size = 1),
-    axis.text.y = element_blank())
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+heatload_pred
+
+## psev
+pd_psev <- gen_pdata("prev_sev_scaled")
+psev_pred <- ggplot(data = pd_psev, aes(x = prev_sev, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher), fill = "gray", alpha = 0.9) +
+  geom_line(color = "black", size = 1) +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 1)) +
+  xlab("CBI (previous time interval)") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(size = 20),
+    axis.text = element_text(size = 12),
+    axis.line.x.top = element_line(size = 1),
+    axis.line.x.bottom = element_line(size = 1),
+    axis.line.y.left = element_line(size = 1),
+    axis.line.y.right = element_line(size = 1),
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+psev_pred
 
 
-plot_grid(dens30, clust30, ht30, area30,
-          dens180, clust180, ht180, area180,
-          em, hdw, fuels,
-          elev, tpi, slope, heat_load, align = "hv")
+##---------------------------------------------------------------
+## Interactions with HDW
+##---------------------------------------------------------------
 
-ggsave("plots/figure4.pdf")
 
+x <- c(10, 75, 150, 250)
+x <- (x - mean(data$hdw)) / sd(data$hdw)
+
+pd_dens_hdw <- gen_pdata("mean_dens_180_scaled", "hdw_scaled", x, npts = 100)
+pd_dens_hdw$hdw <- as.factor(pd_dens_hdw$hdw)
+
+dens_hdw_pred <- ggplot(data = pd_dens_hdw, aes(x = mean_dens_180, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher, fill = hdw), alpha = 0.7) +
+  geom_line(aes(color = hdw), size = 2) +
+  scale_x_continuous(expand = c(0,0), limits = c(40, NA)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0.0, 1)) +
+  scale_color_manual(values = c("#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d")) +
+  scale_fill_manual(values = c("#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d")) +
+  xlab("Mean stem density") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(size = 20),
+    axis.text = element_text(size = 12),
+    axis.line.x.top = element_line(size = 1),
+    axis.line.x.bottom = element_line(size = 1),
+    axis.line.y.left = element_line(size = 1),
+    axis.line.y.right = element_line(size = 1),
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+dens_hdw_pred
+
+
+## pd_clust_hdw <- gen_pdata("clust_180_scaled", "hdw_scaled", x, npts = 100)
+## pd_clust_hdw$hdw <- as.factor(pd_clust_hdw$hdw)
+
+## clust_hdw_pred <- ggplot(data = pd_clust_hdw, aes(x = clust_180, y = p_mean)) +
+##   geom_ribbon(aes(ymin = p_lower, ymax = p_higher, fill = hdw), alpha = 0.7) +
+##   geom_line(aes(color = hdw), size = 2, linetype = "dashed") +
+##   scale_x_continuous(expand = c(0,0), limits = c(NA, NA)) +
+##   scale_y_continuous(expand = c(0,0), limits = c(0.0, 1)) +
+##   scale_color_manual(values = c("#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d")) +
+##   scale_fill_manual(values = c("#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d")) +
+##   xlab("Spatial homogeneity") +
+##   ylab("High severity probability") +
+##   guides(x.sec = "axis", y.sec = "axis") +
+##   theme_bw() +
+##   theme(
+##     panel.grid.minor = element_blank(),
+##     axis.title = element_text(size = 20),
+##     axis.text = element_text(size = 12),
+##     axis.line.x.top = element_line(size = 1),
+##     axis.line.x.bottom = element_line(size = 1),
+##     axis.line.y.left = element_line(size = 1),
+##     axis.line.y.right = element_line(size = 1),
+##     axis.text.y.right = element_blank(),
+##     axis.text.x.top = element_blank(),
+##     axis.ticks.x.top = element_blank(),
+##     axis.ticks.y.right = element_blank())
+## clust_hdw_pred
+
+pd_ht_hdw <- gen_pdata("mean_ht_180_scaled", "hdw_scaled", x, npts = 100)
+pd_ht_hdw$hdw <- as.factor(pd_ht_hdw$hdw)
+
+ht_hdw_pred <- ggplot(data = pd_ht_hdw, aes(x = mean_ht_180, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher, fill = hdw), alpha = 0.7) +
+  geom_line(aes(color = hdw), size = 2) +
+  scale_x_continuous(expand = c(0,0), limits = c(8.5, NA)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0.0, 1)) +
+  scale_color_manual(values = c("#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d")) +
+  scale_fill_manual(values = c("#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d")) +
+  xlab("Mean stem height (m)") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(size = 20),
+    axis.text = element_text(size = 12),
+    axis.line.x.top = element_line(size = 1),
+    axis.line.x.bottom = element_line(size = 1),
+    axis.line.y.left = element_line(size = 1),
+    axis.line.y.right = element_line(size = 1),
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+ht_hdw_pred
+
+pd_area_hdw <- gen_pdata("mean_area_180_scaled", "hdw_scaled", x, npts = 1000)
+pd_area_hdw$hdw <- as.factor(pd_area_hdw$hdw)
+
+area_hdw_pred <- ggplot(data = pd_area_hdw, aes(x = mean_area_180, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher, fill = hdw), alpha = 0.7) +
+  geom_line(aes(color = hdw), size = 2) +
+  scale_x_continuous(expand = c(0,0), limits = c(NA, 10000)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0.0, 1)) +
+  scale_color_manual(values = c("#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d")) +
+  scale_fill_manual(values = c("#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d")) +
+  xlab("Mean gap area (m^2)") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(size = 20),
+    axis.text = element_text(size = 12),
+    axis.line.x.top = element_line(size = 1),
+    axis.line.x.bottom = element_line(size = 1),
+    axis.line.y.left = element_line(size = 1),
+    axis.line.y.right = element_line(size = 1),
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+area_hdw_pred
+
+pd_em_hdw <- gen_pdata("em_scaled", "hdw_scaled", x, npts = 100)
+pd_em_hdw$hdw <- as.factor(pd_em_hdw$hdw)
+
+em_hdw_pred <- ggplot(data = pd_em_hdw, aes(x = em, y = p_mean)) +
+  geom_ribbon(aes(ymin = p_lower, ymax = p_higher, fill = hdw), alpha = 0.7) +
+  geom_line(aes(color = hdw), size = 2) +
+  scale_x_continuous(expand = c(0,0), limits = c(NA, NA)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0.0, 1)) +
+  scale_color_manual(values = c("#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d")) +
+  scale_fill_manual(values = c("#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d")) +
+  xlab("Ladder fuels index") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(size = 20),
+    axis.text = element_text(size = 12),
+    axis.line.x.top = element_line(size = 1),
+    axis.line.x.bottom = element_line(size = 1),
+    axis.line.y.left = element_line(size = 1),
+    axis.line.y.right = element_line(size = 1),
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+em_hdw_pred
+
+
+vars <- c("mean_dens_180_scaled", "hdw_scaled", "clust_180_scaled", "mean_ht_180_scaled",
+          "mean_area_180_scaled", "em_scaled", "avg_fuel_moisture_scaled", "cwd_scaled", "tpi_scaled",
+          "heat_load_scaled", "prev_sev_scaled", "slope_scaled")
+
+ndata <- data.frame(dixie = numeric(1),
+                    northcomplex = numeric(1),
+                    sheep = numeric(1),
+                    sugar = numeric(1),
+                    walker = numeric(1))
+
+for (f in unique(data$fire_name)) {
+  nndata <- ndata
+  nndata[,"fire_name"] <- f
+  nndata[,f] <- 1
+  if (f == unique(data$fire_name)[1]) {
+    pdata <- nndata
+  } else {
+    pdata <- rbind(pdata, nndata)
+  }
+
+}
+
+for (i in 1:nrow(pdata)) {
+
+  pvec <- numeric(nrow(bootstrap_results))
+  for (j in 1:nrow(bootstrap_results)) {
+
+    pvec[j] <-
+      bootstrap_results[j,"intercept"] +
+      bootstrap_results[j,"fire_namenorthcomplex"] * pdata[i, "northcomplex"] +
+      bootstrap_results[j,"fire_namesheep"] * pdata[i, "sheep"] +
+      bootstrap_results[j,"fire_namesugar"] * pdata[i, "sugar"] +
+      bootstrap_results[j,"fire_namewalker"] * pdata[i, "walker"]
+
+  }
+  pdata[i, "p_mean"] <- mean(pvec)
+  pdata[i,"p_lower"] <- quantile(pvec, 0.025)
+  pdata[i,"p_higher"] <- quantile(pvec, 0.975)
+
+}
+
+## transform predictions from log odds to probability
+pdata$p_mean <- exp(pdata$p_mean) / (1 + exp(pdata$p_mean))
+pdata$p_lower <- exp(pdata$p_lower) / (1 + exp(pdata$p_lower))
+pdata$p_higher <- exp(pdata$p_higher) / (1 + exp(pdata$p_higher))
+
+colors = met.brewer(name = "Archambault", n = 5)
+met.brewer(name = "Egypt", n = 3)
+ggsave("palette.pdf")
+
+## fires
+fireid_pred <- ggplot(data = pdata, aes(x = fire_name, y = p_mean)) +
+  geom_errorbar(aes(ymin = p_lower, ymax = p_higher, color = fire_name), linewidth = 1, width = 0.5) +
+  geom_point(aes(color = fire_name), size = 2) +
+  scale_y_continuous(expand = c(0,0), limits = c(0.0, 1.0)) +
+  scale_color_manual(name = "Fire Name", values = colors) +
+  xlab("Fire Name") +
+  ylab("High severity probability") +
+  guides(x.sec = "axis", y.sec = "axis") +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    legend.position = "inside",
+    legend.position.inside = c(0.9, 0.1),
+    axis.title = element_text(size = 20),
+    axis.text = element_text(size = 12),
+    axis.line.x.top = element_line(size = 1),
+    axis.line.x.bottom = element_line(size = 1),
+    axis.line.y.left = element_line(size = 1),
+    axis.line.y.right = element_line(size = 1),
+    axis.text.y.right = element_blank(),
+    axis.text.x.top = element_blank(),
+    axis.ticks.x.top = element_blank(),
+    axis.ticks.y.right = element_blank())
+fireid_pred
+
+
+
+
+pg_hdw <- plot_grid(dens_hdw_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 12)),
+                    ht_hdw_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 12)),
+                    em_hdw_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 12)),
+                    clust_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 12)),
+                    area_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 12)),
+                    ncol = 3)
+pg_hdw
+
+pg_wx_topo <- plot_grid(hdw_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                   fuel_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                   psev_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                   cwd_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                   tpi_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                   slope_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                   heatload_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                   nrow = 2)
+pg_wx_topo
+
+pg_topo <- plot_grid(fireid_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                     tpi_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                     slope_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                     heatload_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                     nrow = 1)
+pg_topo
+
+pg_wx <- plot_grid(hdw_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                   fuel_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                   psev_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                   cwd_pred + theme(legend.position = "none", axis.title.y = element_blank(), axis.text.y = element_blank(), axis.title = element_text(size = 10), axis.text = element_text(size = 8)),
+                   nrow = 1)
+pg_wx
+
+
+pg_wx_topo <- plot_grid(pg_wx, pg_topo, ncol = 1)
+
+plot_grid(pg_hdw, pg_wx_topo, ncol = 1, rel_heights = c(0.6, 0.4), align = "hv")
+
+ggsave("plots/figure4/figure4.pdf")
+
+
+
+##---------------------------------------------------------------
+## Density effect estimates for discussion
+##---------------------------------------------------------------
+
+vars <- c("mean_dens_180_scaled", "hdw_scaled", "clust_180_scaled", "mean_ht_180_scaled",
+            "mean_area_180_scaled", "em_scaled", "avg_fuel_moisture_scaled", "cwd_scaled", "tpi_scaled",
+            "heat_load_scaled", "prev_sev_scaled", "slope_scaled")
+
+
+pdata <- data.frame(x = numeric(2))
+indx <- which(colnames(data) == "mean_dens_180_scaled")
+
+l <- (100 - mean(data$mean_dens_180)) / sd(data$mean_dens_180)
+h <- (200 - mean(data$mean_dens_180)) / sd(data$mean_dens_180)
+
+pdata[,"mean_dens_180_scaled"] <- seq(l, h, length.out = npts)
+
+ocols <- vars[!(vars %in% c("mean_dens_180_scaled"))]
+
+for (i in 1:length(ocols)) {
+  pdata[,ocols[i]] <- 0
+}
+
+pdata$hdw_scaled <- (50 - mean(data$hdw)) / sd(data$hdw)
+
+pdata <- pdata[,2:ncol(pdata)]
+pdata$fire_name <- "dixie"
+
+pdata[,"p_mean"] <- predict(naive_model, newdata = pdata)
+
+for (i in 1:nrow(pdata)) {
+
+  pvec <- numeric(nrow(bootstrap_results))
+  for (j in 1:nrow(bootstrap_results)) {
+
+    pvec[j] <-
+      bootstrap_results[j,"intercept"] +
+      bootstrap_results[j,"mean_dens_180_scaled"] * pdata[i, "mean_dens_180_scaled"] +
+      bootstrap_results[j,"hdw_scaled"] * pdata[i, "hdw_scaled"] +
+      bootstrap_results[j,"clust_180_scaled"] * pdata[i, "clust_180_scaled"] +
+      bootstrap_results[j,"mean_ht_180_scaled"] * pdata[i, "mean_ht_180_scaled"] +
+      bootstrap_results[j,"mean_area_180_scaled"] * pdata[i, "mean_area_180_scaled"] +
+      bootstrap_results[j,"em_scaled"] * pdata[i, "em_scaled"] +
+      bootstrap_results[j,"avg_fuel_moisture_scaled"] * pdata[i, "avg_fuel_moisture_scaled"] +
+      bootstrap_results[j,"cwd_scaled"] * pdata[i, "cwd_scaled"] +
+      bootstrap_results[j,"slope_scaled"] * pdata[i, "slope_scaled"] +
+      bootstrap_results[j,"tpi_scaled"] * pdata[i, "tpi_scaled"] +
+      bootstrap_results[j,"heat_load_scaled"] * pdata[i, "heat_load_scaled"] +
+      bootstrap_results[j,"prev_sev_scaled"] * pdata[i, "prev_sev_scaled"] +
+      bootstrap_results[j,"hdw_scaled.mean_dens_180_scaled"] * pdata[i, "mean_dens_180_scaled"] * pdata[i, "hdw_scaled"] +
+      bootstrap_results[j,"hdw_scaled.mean_ht_180_scaled"] * pdata[i, "mean_ht_180_scaled"] * pdata[i, "hdw_scaled"] +
+      bootstrap_results[j,"hdw_scaled.mean_area_180_scaled"] * pdata[i, "mean_area_180_scaled"] * pdata[i, "hdw_scaled"] +
+      bootstrap_results[j,"hdw_scaled.em_scaled"] * pdata[i, "em_scaled"] * pdata[i, "hdw_scaled"]
+
+  }
+
+  pdata[i,"p_lower"] <- quantile(pvec, 0.025)
+  pdata[i,"p_higher"] <- quantile(pvec, 0.975)
+  #pdata[i, "p_mean"] <- mean(pvec)
+
+}
+
+pdata_descaled <- pdata
+for (i in 1:(ncol(pdata_descaled)-4)) {
+
+  cname <- gsub(pattern = "_scaled", x = colnames(pdata_descaled)[i], replacement = "")
+  colnames(pdata_descaled)[i] <- cname
+  indx <- which(colnames(data) == cname)
+  pdata_descaled[,i] <- pdata_descaled[,i] * sd(data[[indx]]) + mean(data[[indx]])
+
+}
+head(pdata_descaled)
+
+## transform predictions from log odds to probability
+pdata_descaled$p_mean <- exp(pdata_descaled$p_mean) / (1 + exp(pdata_descaled$p_mean))
+pdata_descaled$p_lower <- exp(pdata_descaled$p_lower) / (1 + exp(pdata_descaled$p_lower))
+pdata_descaled$p_higher <- exp(pdata_descaled$p_higher) / (1 + exp(pdata_descaled$p_higher))
+pdata_descaled
+
+pdata_descaled[2,"p_mean"] - pdata_descaled[1,"p_mean"]
+
+
+pdata <- data.frame(x = numeric(2))
+indx <- which(colnames(data) == "mean_dens_180_scaled")
+
+l <- (100 - mean(data$mean_dens_180)) / sd(data$mean_dens_180)
+h <- (200 - mean(data$mean_dens_180)) / sd(data$mean_dens_180)
+
+pdata[,"mean_dens_180_scaled"] <- seq(l, h, length.out = npts)
+
+ocols <- vars[!(vars %in% c("mean_dens_180_scaled"))]
+
+for (i in 1:length(ocols)) {
+  pdata[,ocols[i]] <- 0
+}
+
+pdata$hdw_scaled <- (150 - mean(data$hdw)) / sd(data$hdw)
+
+pdata <- pdata[,2:ncol(pdata)]
+pdata$fire_name <- "dixie"
+
+pdata[,"p_mean"] <- predict(naive_model, newdata = pdata)
+
+for (i in 1:nrow(pdata)) {
+
+  pvec <- numeric(nrow(bootstrap_results))
+  for (j in 1:nrow(bootstrap_results)) {
+
+    pvec[j] <-
+      bootstrap_results[j,"intercept"] +
+      bootstrap_results[j,"mean_dens_180_scaled"] * pdata[i, "mean_dens_180_scaled"] +
+      bootstrap_results[j,"hdw_scaled"] * pdata[i, "hdw_scaled"] +
+      bootstrap_results[j,"clust_180_scaled"] * pdata[i, "clust_180_scaled"] +
+      bootstrap_results[j,"mean_ht_180_scaled"] * pdata[i, "mean_ht_180_scaled"] +
+      bootstrap_results[j,"mean_area_180_scaled"] * pdata[i, "mean_area_180_scaled"] +
+      bootstrap_results[j,"em_scaled"] * pdata[i, "em_scaled"] +
+      bootstrap_results[j,"avg_fuel_moisture_scaled"] * pdata[i, "avg_fuel_moisture_scaled"] +
+      bootstrap_results[j,"cwd_scaled"] * pdata[i, "cwd_scaled"] +
+      bootstrap_results[j,"slope_scaled"] * pdata[i, "slope_scaled"] +
+      bootstrap_results[j,"tpi_scaled"] * pdata[i, "tpi_scaled"] +
+      bootstrap_results[j,"heat_load_scaled"] * pdata[i, "heat_load_scaled"] +
+      bootstrap_results[j,"prev_sev_scaled"] * pdata[i, "prev_sev_scaled"] +
+      bootstrap_results[j,"hdw_scaled.mean_dens_180_scaled"] * pdata[i, "mean_dens_180_scaled"] * pdata[i, "hdw_scaled"] +
+      bootstrap_results[j,"hdw_scaled.mean_ht_180_scaled"] * pdata[i, "mean_ht_180_scaled"] * pdata[i, "hdw_scaled"] +
+      bootstrap_results[j,"hdw_scaled.mean_area_180_scaled"] * pdata[i, "mean_area_180_scaled"] * pdata[i, "hdw_scaled"] +
+      bootstrap_results[j,"hdw_scaled.em_scaled"] * pdata[i, "em_scaled"] * pdata[i, "hdw_scaled"]
+
+  }
+
+  pdata[i,"p_lower"] <- quantile(pvec, 0.025)
+  pdata[i,"p_higher"] <- quantile(pvec, 0.975)
+  #pdata[i, "p_mean"] <- mean(pvec)
+
+}
+
+pdata_descaled <- pdata
+for (i in 1:(ncol(pdata_descaled)-4)) {
+
+  cname <- gsub(pattern = "_scaled", x = colnames(pdata_descaled)[i], replacement = "")
+  colnames(pdata_descaled)[i] <- cname
+  indx <- which(colnames(data) == cname)
+  pdata_descaled[,i] <- pdata_descaled[,i] * sd(data[[indx]]) + mean(data[[indx]])
+
+}
+head(pdata_descaled)
+
+## transform predictions from log odds to probability
+pdata_descaled$p_mean <- exp(pdata_descaled$p_mean) / (1 + exp(pdata_descaled$p_mean))
+pdata_descaled$p_lower <- exp(pdata_descaled$p_lower) / (1 + exp(pdata_descaled$p_lower))
+pdata_descaled$p_higher <- exp(pdata_descaled$p_higher) / (1 + exp(pdata_descaled$p_higher))
+pdata_descaled
+
+pdata_descaled[2,"p_mean"] - pdata_descaled[1,"p_mean"]

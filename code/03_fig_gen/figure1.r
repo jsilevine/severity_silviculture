@@ -95,7 +95,7 @@ fig1a <- ggplot() +
         panel.grid.minor = element_blank())
 fig1a
 
-ggsave("plots/figure1a.png", fig1a)
+ggsave("plots/figure1/figure1a.png", fig1a)
 
 
 ownership <- rast("data/ownership/ownership.tif")
@@ -120,7 +120,7 @@ ggplot() +
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank())
 
-ggsave("plots/figure1e.png", bg = "transparent")
+ggsave("plots/figure1/figure1e.png", bg = "transparent")
 
 for (f in unique(data$fire_name)) {
   data[data$fire_name == f, "datetime_norm"] <- ((data[data$fire_name == f, "datetime"] - min(data[data$fire_name == f, "datetime"])) /
@@ -146,7 +146,7 @@ ggplot() +
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank())
 
-ggsave("plots/figure1f.png")
+ggsave("plots/figure1/figure1f.png")
 
 ##---------------------------------------------------------------
 ## Lidar insets
@@ -268,12 +268,12 @@ fig1b <- plot_grid(t2, t3, align = "hv", rel_widths = c(0.5, 0.5))
 fig1b
 
 
-ggsave(filename = "plots/figure1b.svg", plot = fig1b)
+ggsave(filename = "plots/figure1/figure1b.svg", plot = fig1b)
 
 fig1g <- plot_grid(t3, t4, align = "hv", rel_widths = c(0.5, 0.5))
 fig1g
 
-ggsave("plots/figure1g.svg", plot = fig1g)
+ggsave("plots/figure1/figure1g.svg", plot = fig1g)
 
 
 ##---------------------------------------------------------------
@@ -296,4 +296,171 @@ ggplot() +
   theme_bw() +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank())
-ggsave("plots/figure1c.pdf")
+ggsave("plots/figure1/figure1c.pdf")
+
+
+
+
+
+
+
+
+
+##---------------------------------------------------------------
+## Scratch
+##---------------------------------------------------------------
+
+library(speedglm)
+library(data.table)
+library(ggplot2)
+library(terra)
+library(raster)
+library(sf)
+library(tidyterra)
+library(ggnewscale)
+library(cowplot)
+library(maps)
+library(ggspatial)
+library(ggnewscale)
+
+source("code/utility/utility_functions.r")
+
+data <- fread("data/complete_data.csv")
+data <- data[complete.cases(data),]
+
+template <- rast("data/templates/raster_template.tif")
+
+## load severity data
+
+dixie_s <- rast("data/cbi/DIXIE_2021_CBI_bc.tif")
+dixie_inv <- snap_to_template(dixie_s, template, inverse = TRUE)
+dixie_inv[!is.na(dixie_inv)] <- 1
+
+north_complex_s <- rast("data/cbi/NORTH_COMPLEX_2020_CBI_bc.tif")
+north_complex_inv <- snap_to_template(north_complex_s, template, inverse = TRUE)
+north_complex_inv[!is.na(north_complex_inv)] <- 1
+
+sheep_s <- rast("data/cbi/SHEEP_2020_CBI_bc.tif")
+sheep_inv <- snap_to_template(sheep_s, template, inverse = TRUE)
+sheep_inv[!is.na(sheep_inv)] <- 1
+
+sugar_s <- rast("data/cbi/SUGAR_2021_CBI_bc.tif")
+sugar_inv <- snap_to_template(sugar_s, template, inverse = TRUE)
+sugar_inv[!is.na(sugar_inv)] <- 1
+
+walker_s <- rast("data/cbi/WALKER_2019_CBI_bc.tif")
+walker_inv <- snap_to_template(walker_s, template, inverse = TRUE)
+walker_inv[!is.na(walker_inv)] <- 1
+
+combo_inv <- terra::mosaic(dixie_inv, north_complex_inv, walker_inv, sheep_inv, sugar_inv)
+combo_sev <- terra::mosaic(north_complex_s, dixie_s, walker_s, sheep_s, sugar_s)
+
+## load perimeter data
+
+perims_all <- st_read("data/perimeters/all_perimiters.shp")
+
+dixie_perim <- readRDS("data/perimeters/dixie_perim.rds")
+dixie_perim <- st_cast(dixie_perim, "POLYGON")
+dixie_perim$area <- st_area(dixie_perim)
+dixie_perim <- dixie_perim[as.numeric(dixie_perim$area) > 37756431,]
+
+north_complex_perim <- readRDS("data/perimeters/northcomplex_perim.rds")
+north_complex_perim <- st_cast(north_complex_perim, "POLYGON")
+north_complex_perim$area <- st_area(north_complex_perim)
+north_complex_perim <- north_complex_perim[as.numeric(north_complex_perim$area) > 127681018,]
+
+sheep_perim <- readRDS("data/perimeters/sheep_perim.rds")
+sheep_perim <- st_cast(sheep_perim, "POLYGON")
+sheep_perim$area <- st_area(sheep_perim)
+max(sheep_perim$area)
+sheep_perim <- sheep_perim[as.numeric(sheep_perim$area) > 11940259,]
+
+sugar_perim <- readRDS("data/perimeters/sugar_perim.rds")
+sugar_perim <- st_cast(sugar_perim, "POLYGON")
+sugar_perim$area <- st_area(sugar_perim)
+max(sugar_perim$area)
+sugar_perim <- sugar_perim[as.numeric(sugar_perim$area) > 42404068,]
+
+walker_perim <- readRDS("data/perimeters/walker_perim.rds")
+walker_perim <- st_cast(walker_perim, "POLYGON")
+walker_perim$area <- st_area(walker_perim)
+max(walker_perim$area)
+walker_perim <- walker_perim[as.numeric(walker_perim$area) > 22028674,]
+
+perims <- rbind(dixie_perim, north_complex_perim, sheep_perim, sugar_perim, walker_perim)
+perims <- st_transform(perims, st_crs(3310))
+
+fig1a <- ggplot() +
+  #geom_spatraster(data = combo_inv, aes(fill = CBI_bc), alpha = 0.7) +
+  #scale_fill_gradient(na.value = "transparent", low = "gray", high = "gray") +
+  new_scale_fill() +
+  geom_spatraster(data = combo_sev, aes(fill = CBI_bc), maxcell = 5000000) +
+  scale_fill_whitebox_c(
+    palette = "muted",
+    labels = scales::label_number(suffix = ""),
+    n.breaks = 12,
+    guide = guide_legend(reverse = TRUE),
+    na.value = "transparent"
+  ) +
+  geom_sf(data = perims, mapping = aes(geometry = Shape), fill = NA, color = "white", linewidth = 0.2) +
+  annotation_scale() +
+  scale_y_continuous(limits = c(38.7, 40.4)) +
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = '#2a2f3d')
+        )
+fig1a
+
+ggsave("plots/figure1/figure1a2.png", fig1a)
+
+
+ownership <- rast("data/ownership/ownership.tif")
+ownership_df <- as.data.frame(ownership, xy = TRUE, na.rm = TRUE)
+ownership_df$layer <- as.factor(ownership_df$layer)
+
+colors <- met.brewer(name = "Egypt", n = 3)
+colors
+colors <- colors[c(1,3,4)]
+colors
+
+colors2 <- met.brewer(name = "Derain", n = 6)
+colors2
+
+ggplot() +
+  geom_sf(data = perims, mapping = aes(geometry = Shape), fill = "gray", color = "black", linewidth = 0.4, alpha = 0.5) +
+  geom_raster(data = ownership_df, aes(x = x, y = y, fill = layer)) +
+  scale_fill_manual(values = c(colors[3], colors2[1], colors[2])) +
+  theme_bw() +
+  theme(panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+ggsave("plots/figure1/figure1e.png", bg = "transparent")
+
+for (f in unique(data$fire_name)) {
+  data[data$fire_name == f, "datetime_norm"] <- ((data[data$fire_name == f, "datetime"] - min(data[data$fire_name == f, "datetime"])) /
+    (max(data[data$fire_name == f, "datetime"]) - min(data[data$fire_name == f, "datetime"]))) * 100
+}
+
+
+ggplot() +
+  geom_sf(data = perims, mapping = aes(geometry = Shape), fill = "gray", color = NA, linewidth = 0.4, alpha = 0.5) +
+  geom_raster(data = data, aes(x = x, y = y, fill = datetime_norm)) +
+  geom_sf(data = perims, mapping = aes(geometry = Shape), fill = NA, color = "black", linewidth = 0.4, alpha = 0.5) +
+  scale_fill_whitebox_c(
+    name = "Fire progression",
+    palette = "muted",
+    labels = scales::label_number(suffix = "%"),
+    n.breaks = 12,
+    guide = guide_legend(reverse = TRUE),
+    na.value = "transparent"
+  )     +
+  theme_bw() +
+  theme(panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+ggsave("plots/figure1/figure1f.png")

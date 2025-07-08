@@ -18,7 +18,7 @@ data = data[completecases(data),:];
 ## create grid for kfold cross validation
 ##---------------------------------------------------------------
 
-bb = RData.load("data/autocor_scale_m.rds")
+bb = RData.load("data/autocor_scale/autocor_scale_m.rds")
 
 fire_ids = unique(data.fire_name);
 
@@ -98,14 +98,14 @@ training_boxes
 
 plot(training_boxes.lower_left, group = training_boxes.fire_name, seriestype = :scatter)
 
-CSV.write("data/testing_boxes.csv", testing_boxes)
-CSV.write("data/training_boxes.csv", training_boxes)
+CSV.write("data/random_forests/testing_boxes.csv", testing_boxes)
+CSV.write("data/random_forests/training_boxes.csv", training_boxes)
 
 
 ##---------------------------------------------------------------
 ## Generate folds for CV
 ##---------------------------------------------------------------
-training_boxes = CSV.read("data/training_boxes.csv", DataFrame)
+training_boxes = CSV.read("data/random_forests/training_boxes.csv", DataFrame)
 training_boxes.lower_left .= eval.(Meta.parse.(training_boxes.lower_left))
 
 ## function to generate folds for kfold CV
@@ -152,7 +152,7 @@ for i in 1:length(folds)
         (reduce(vcat, folds[1:end .!= i]))))
 end
 
-save_object("data/folds_formatted.jld2", folds_formatted)
+save_object("data/random_forests/folds_formatted.jld2", folds_formatted)
 
 
 
@@ -256,12 +256,12 @@ for i in 1:length(p)
                                                                    n_subfeatures = p[i][3])
     fm = machine(forest_model, features, target)
     performance_data[i,:] .= kfold(fm, folds_formatted, 0.25)
-    CSV.write("data/rf_param_search.csv", performance_data)
+    CSV.write("data/random_forests/rf_param_search.csv", performance_data)
 end
 
 ## check results
 
-CSV.write("data/model_tuning_30m.csv", performance_data)
+CSV.write("data/random_forests/model_tuning_30m.csv", performance_data)
 
 ##---------------------------------------------------------------
 ## Fit model with tuned parameters
@@ -277,12 +277,12 @@ fm = machine(forest_model,
 ## fit model, takes awhile
 MLJ.fit!(fm, rows = vcat(folds_formatted[1][1], folds_formatted[1][2]))
 
-save_object("data/forest_model.jld2", fm)
+save_object("data/random_forests/forest_model.jld2", fm)
 
 ##---------------------------------------------------------------
 ## check out of sample prediction performance and compute feature importances
 ##---------------------------------------------------------------
-fm = load_object("data/forest_model.jld2")
+fm = load_object("data/random_forests/forest_model.jld2")
 
 ho_list = findall(data.holdout .== 1);
 
@@ -309,9 +309,9 @@ explain = copy(features[exp_list, :])
 ## compute shapley values
 shap = shapley(η -> MLJ.predict(fm, η), MonteCarlo(CPUThreads(), 64), explain)
 shap2 = shap
-save_object("data/shapley.jld2", shap)
+save_object("data/random_forests/shapley/shapley.jld2", shap)
 
-shap = load_object("data/shapley.jld2")
+shap = load_object("data/random_forests/shapley/shapley.jld2")
 
 ## summarize shapley values
 shapley_summary = DataFrame(feature = names(features),
@@ -334,7 +334,7 @@ bar(data_plot.mean_high, orientation = :h, yticks = (1:16, data_plot.feature),
     yflip = true)
 savefig("plots/shapley_importance_high.pdf")
 
-CSV.write("data/shapley_total_30m.csv", shapley_summary)
+CSV.write("data/random_forests/shapley/shapley_total_30m.csv", shapley_summary)
 
 ## summarize shapley values
 shapley_summary = DataFrame(feature = names(features),
@@ -362,7 +362,7 @@ bar(data_plot.mean_high, orientation = :h, yticks = (1:16, data_plot.feature),
     yflip = true)
 savefig("plots/shapley_importance_high_private.pdf")
 
-CSV.write("data/shapley_private_30m.csv", shapley_summary)
+CSV.write("data/random_forests/shapley/shapley_private_30m.csv", shapley_summary)
 
 for i in 1:length(shap)
     shp_mat = pdf(shap[i], ["not_high","high"])
@@ -378,7 +378,7 @@ bar(data_plot.mean_high, orientation = :h, yticks = (1:16, data_plot.feature),
     yflip = true)
 savefig("plots/shapley_importance_high_public.pdf")
 
-CSV.write("data/shapley_public_30m.csv", shapley_summary)
+CSV.write("data/random_forests/shapley/shapley_public_30m.csv", shapley_summary)
 
 Random.seed!(2)
 pf_ss = sample(pf_sub, length(pi_sub))
@@ -399,7 +399,7 @@ bar(data_plot.mean_high, orientation = :h, yticks = (1:16, data_plot.feature),
     yflip = true)
 savefig("plots/shapley_importance_high_balanced.pdf")
 
-CSV.write("data/shapley_balanced_30m.csv", shapley_summary)
+CSV.write("data/random_forests/shapley/shapley_balanced_30m.csv", shapley_summary)
 
 
 
@@ -415,7 +415,7 @@ CSV.write("data/shapley_balanced_30m.csv", shapley_summary)
 ## Fit and tune random forest model
 ##---------------------------------------------------------------
 
-folds_formatted = load_object("data/folds_formatted.jld2");
+folds_formatted = load_object("data/random_forests/folds_formatted.jld2");
 
 data.holdout .= 1
 data[vcat(folds_formatted[1][1], folds_formatted[1][2]), :holdout] .= 0
@@ -474,7 +474,7 @@ for i in 1:length(p)
                                                                    n_subfeatures = p[i][3])
     fm = machine(forest_model_180, features, target)
     performance_data_180[i,:] .= kfold(fm, folds_formatted, 0.25)
-    CSV.write("data/rf_param_search_180.csv", performance_data_180)
+    CSV.write("data/random_forests/rf_param_search_180.csv", performance_data_180)
 end
 
 
@@ -495,13 +495,13 @@ fm_180 = machine(forest_model_180,
 ## fit model, takes awhile\
 MLJ.fit!(fm_180, rows = vcat(folds_formatted[1][1], folds_formatted[1][2]))
 
-save_object("data/forest_model_180.jld2", fm_180)
+save_object("data/random_forests/forest_model_180.jld2", fm_180)
 
 ##---------------------------------------------------------------
 ## check out of sample prediction performance and compute feature importances
 ##---------------------------------------------------------------
 
-fm_180 = load_object("data/forest_model_180.jld2")
+fm_180 = load_object("data/random_forests/forest_model_180.jld2")
 
 ho_list = findall(data.holdout .== 1)
 
@@ -530,7 +530,7 @@ explain = copy(features[exp_list, :])
 ## compute shapley values
 shap_180 = shapley(η -> MLJ.predict(fm_180, η), MonteCarlo(CPUThreads(), 64), explain)
 
-save_object("data/shapley_180.jld2", shap_180)
+save_object("data/random_forests/shapley/shapley_180.jld2", shap_180)
 
 ## summarize shapley values
 shapley_summary_180 = DataFrame(feature = names(features),
@@ -552,7 +552,7 @@ bar(data_plot.mean_high, orientation = :h, yticks = (1:16, data_plot.feature),
     xlims = [0, 0.05], frame = :box, legend = :none, color = :black, title = "Feature importance (high)",
     yflip = true)
 savefig("plots/shapley_importance_high_180.pdf")
-CSV.write("data/shapley_total_180m.csv", shapley_summary_180)
+CSV.write("data/random_forests/shapley/shapley_total_180m.csv", shapley_summary_180)
 
 
 ## summarize shapley values
@@ -579,7 +579,7 @@ bar(data_plot.mean_high, orientation = :h, yticks = (1:16, data_plot.feature),
     yflip = true)
 savefig("plots/shapley_importance_high_private_180.pdf")
 
-CSV.write("data/shapley_private_180m.csv", shapley_summary_180)
+CSV.write("data/random_forests/shapley/shapley_private_180m.csv", shapley_summary_180)
 
 
 for i in 1:length(shap_180)
@@ -595,7 +595,7 @@ bar(data_plot.mean_high, orientation = :h, yticks = (1:16, data_plot.feature),
     xlims = [0, 0.05], frame = :box, legend = :none, color = :black, title = "Feature importance (high -- Public)",
     yflip = true)
 savefig("plots/shapley_importance_high_public_180.pdf")
-CSV.write("data/shapley_public_180m.csv", shapley_summary_180)
+CSV.write("data/random_forests/shapley/shapley_public_180m.csv", shapley_summary_180)
 
 Random.seed!(2)
 pf_ss = sample(pf_sub, length(pi_sub))
@@ -615,230 +615,5 @@ bar(data_plot.mean_high, orientation = :h, yticks = (1:16, data_plot.feature),
     xlims = [0, 0.05], frame = :box, legend = :none, color = :black, title = "Feature importance (high -- Balanced)",
     yflip = true)
 savefig("plots/shapley_importance_high_balanced.pdf")
-CSV.write("data/shapley_balanced_180m.csv", shapley_summary_180)
+CSV.write("data/random_forests/shapley/shapley_balanced_180m.csv", shapley_summary_180)
 
-
-##---------------------------------------------------------------
-## Partial dependency plots
-##---------------------------------------------------------------
-
-function pdp(;var = [:mean_dens_30], npts = 100, sp = 0.5, st = -1, var2_levels = [0], pts = true)
-
-    bdf = DataFrame(fire_name = ["sugar", "walker", "north_complex", "sheep"],
-                    clust_30 = zeros(4),
-                    mean_dens_30 = zeros(4),
-                    mean_area_30 = zeros(4),
-                    sd_area_30 = zeros(4),
-                    mean_ht_30 = zeros(4),
-                    mean_frac_30 = zeros(4),
-                    em = zeros(4),
-                    cwd = zeros(4),
-                    slope = zeros(4),
-                    tpi = zeros(4),
-                    heat_load = zeros(4),
-                    prev_sev = zeros(4),
-                    avg_fuel_moisture = zeros(4),
-                    hdw = zeros(4),
-                    avg_fuel_temp = zeros(4));
-    varlist = [:fire_name, :clust_30_scaled, :mean_dens_30_scaled, :mean_area_30_scaled,
-               :mean_ht_30_scaled, :em_scaled, :cwd_scaled, :slope_scaled,
-               :tpi_scaled, :heat_load_scaled, :prev_sev_scaled, :avg_fuel_moisture_scaled, :hdw_scaled]
-
-    if st == -1
-        st = round((maximum(data[:,var[1]]) - minimum(data[:,var[1]])) / npts, digits = 2)
-    end
-
-    if length(var) > 1
-        pd = DataFrame(Base.product(collect(range(0, round(maximum(data.mean_dens_30)), length = 100)),
-                            var2_levels));
-        rename!(pd, var)
-        for v in varlist[2:length(varlist)][varlist[2:length(varlist)] .∉ [var]]
-            pd[:,v] .= median(data[:,v])
-        end
-    else
-        pd = DataFrame()
-        pd[:,var[1]] = collect(range(round(minimum(data[:,var[1]])), round(maximum(data[:,var[1]])), length = npts))
-        for v in varlist[2:length(varlist)][varlist[2:length(varlist)] .!= var[1]]
-            pd[:,v] .= median(data[:,v])
-        end
-    end
-
-    ## coerce to correct scitype
-    for i in 1:ncol(pd)
-        pd[:,i]  = coerce(float.(identity.(pd[:,i])), Continuous)
-    end
-
-    pd.fire_name .= "dixie";
-    pd = vcat(pd, bdf);
-
-    pd.fire_name = coerce(pd.fire_name, OrderedFactor);
-    pd = pd[:, [:fire_name, :clust_30_scaled, :mean_dens_30_scaled, :mean_area_30_scaled,
-               :mean_ht_30_scaled, :em_scaled, :cwd_scaled, :slope_scaled,
-               :tpi_scaled, :heat_load_scaled, :prev_sev_scaled, :avg_fuel_moisture_scaled, :hdw_scaled]];
-
-    yt = MLJ.predict(fm, pd);
-
-    prs = pdf(yt, ["not_high", "high"]);
-
-    # layout = @layout [a
-    #                   b{1.0w,0.8h}]
-
-    if length(var) > 1
-
-        colors = ["#ffeda0", "#fec44f", "#f03b20"]
-
-        np = npts * length(var2_levels)
-
-        phigh = Plots.plot(layout = layout, link = :both, size = (500, 500), margin = -10Plots.px)
-        if pts
-            plot!(pd[1:np, var[1]], prs[1:np,2], subplot = 2, group = pd[1:np, var[2]],
-                  seriestype = :scatter, markercolor = :match, color_palette = colors)
-        end
-        dx = maximum(data[:, var[1]]) / 150
-        binedges = 0:dx:maximum(data[:, var[1]])
-        spr = copy(data[data.own_type .== "Private Industrial", var[1]])
-        sf = copy(data[data.own_type .== "Federal", var[1]])
-        aw = histcounts(spr[sample(1:length(spr), 500000)], binedges)
-        bw = histcounts(sf[sample(1:length(sf), 500000)], binedges)
-        for i in 1:length(unique(pd[:,var[2]]))-1
-            lm = loess(pd[pd[!,var[2]] .== unique(pd[!,var[2]])[i], var[1]], prs[pd[!,var[2]] .== unique(pd[!,var[2]])[i],2], span = 0.5)
-            nx = range(extrema(pd[pd[!,var[2]] .== unique(pd[!,var[2]])[i], var[1]])...; step = 5)
-            ny = Loess.predict(lm, nx)
-            plot!(nx, ny, subplot = 2, color = colors[i], linewidth = 3, legend = :none, frame = :box)
-        end
-
-        xlabel!(string(var[1]))
-        bar!(binedges, aw, subplot = 1, bar_width = dx, alpha = 0.3,
-             frame = :none, color = :blue, legend = :none, linewidth = 0)
-        bar!(binedges, bw, subplot = 1, bar_width = dx, alpha = 0.3,
-             frame = :none, color = :green, legend = :none, linewidth = 0, title = "High")
-
-        # plow = Plots.plot(layout = layout, link = :both, size = (500, 500), margin = -10Plots.px)
-        # if pts
-        #     plot!(pd[1:np, var[1]], prs[1:np,1], group = pd[1:np, var[2]], subplot = 2,
-        #           seriestype = :scatter, markercolor = :match, color_palette = colors)
-        # end
-        # for i in 1:length(unique(pd[:,var[2]]))-1
-        #     lm = loess(pd[pd[!,var[2]] .== unique(pd[!,var[2]])[i], var[1]], prs[pd[!,var[2]] .== unique(pd[!,var[2]])[i],1], span = 0.5)
-        #     nx = range(extrema(pd[pd[!,var[2]] .== unique(pd[!,var[2]])[i], var[1]])...; step = 5)
-        #     ny = Loess.predict(lm, nx)
-        #     plot!(nx, ny, subplot = 2, color = colors[i], linewidth = 3, legend = :none, frame = :box)
-        # end
-        # xlabel!(string(var[1]))
-        # bar!(binedges, aw, subplot = 1, bar_width = dx, alpha = 0.3,
-        #      frame = :none, color = :blue, legend = :none, linewidth = 0)
-        # bar!(binedges, bw, subplot = 1, bar_width = dx, alpha = 0.3,
-        #      frame = :none, color = :green, legend = :none, linewidth = 0, title = "Low")
-
-    else
-
-        dx = maximum(data[:, var[1]]) / 150
-        binedges = 0:dx:maximum(data[:, var[1]])
-        spr = copy(data[data.own_type .== "Private Industrial", var[1]])
-        sf = copy(data[data.own_type .== "Federal", var[1]])
-        aw = histcounts(spr[sample(1:length(spr), 500000)], binedges)
-        bw = histcounts(sf[sample(1:length(sf), 500000)], binedges)
-
-        phigh = Plots.plot(layout = layout, link = :both, size = (400, 400), margin = -10Plots.px)
-        if pts
-            plot!(pd[1:npts, var[1]], prs[1:npts,2], seriestype = :scatter, color = :black, subplot = 2)
-        end
-        lm = loess(pd[1:npts, var[1]], prs[1:npts,2], span = sp)
-        nx = range(extrema(pd[1:npts, var[1]])...; step = st)
-        ny = Loess.predict(lm, nx)
-        plot!(nx, ny, color = :red, linewidth = 3, legend = :none, frame = :box,
-              ylims = [round(minimum(prs), digits = 2), round(maximum(prs), digits = 2)], subplot = 2)
-        xlabel!(string(var[1]))
-        bar!(binedges, aw, subplot = 1, bar_width = dx, alpha = 0.3,
-             frame = :none, color = :blue, legend = :none, linewidth = 0)
-        bar!(binedges, bw, subplot = 1, bar_width = dx, alpha = 0.3,
-             frame = :none, color = :green, legend = :none, linewidth = 0, title = "High")
-
-        # plow = Plots.plot(layout = layout, link = :both, size = (400, 400), margin = -10Plots.px)
-        # if pts
-        #     plot!(pd[1:npts, var[1]], prs[1:npts,1], seriestype = :scatter, color = :black, subplot = 2)
-        # end
-        # lm = loess(pd[1:npts, var[1]], prs[1:npts,1], span = sp)
-        # nx = range(extrema(pd[1:npts, var[1]])...; step = st)
-        # ny = Loess.predict(lm, nx)
-        # plot!(nx, ny, color = :green, linewidth = 3, legend = :none, frame = :box,
-        #       ylims = [round(minimum(prs), digits = 2), round(maximum(prs), digits = 2)], subplot = 2)
-        # xlabel!(string(var[1]))
-        # bar!(binedges, aw, subplot = 1, bar_width = dx, alpha = 0.3,
-        #      frame = :none, color = :blue, legend = :none, linewidth = 0)
-        # bar!(binedges, bw, subplot = 1, bar_width = dx, alpha = 0.3,
-        #      frame = :none, color = :green, legend = :none, linewidth = 0, title = "Low")
-
-    end
-
-    return Plots.plot(phigh)
-
-end
-
-## forest structure
-pdp(var = [:mean_dens_30], pts = false, npts = 500)
-savefig("../plots/pdp_mean_dens.pdf")
-pdp(var = [:clust_30], pts = false, npts = 500)
-savefig("../plots/pdp_clust.pdf")
-pdp(var = [:mean_area_30], pts = false)
-savefig("../plots/pdp_mean_area.pdf")
-pdp(var = [:sd_area_30], pts = false)
-savefig("../plots/pdp_sd_area.pdf")
-pdp(var = [:em], sp = 0.3, pts = false)
-savefig("../plots/pdp_em.pdf")
-pdp(var = [:mean_frac_30], sp = 0.3, pts = false)
-
-## weather
-pdp(var = [:hdw], pts = false, npts = 500)
-savefig("../plots/pdp_hdw.pdf")
-pdp(var = [:avg_fuel_moisture], sp = 0.3, pts = false)
-savefig("../plots/pdp_fuel_moisture.pdf")
-pdp(var = [:avg_fuel_temp], sp = 0.3, pts = false)
-savefig("../plots/pdp_avg_fuel_temp.pdf")
-pdp(var = [:prev_sev], pts = false)
-savefig("../plots/pdp_prev_sev.pdf")
-
-## topography
-pdp(var = [:cwd], pts = false)
-savefig("../plots/pdp_cwd.pdf")
-pdp(var = [:slope], pts = false)
-savefig("../plots/pdp_slope.pdf")
-pdp(var = [:tpi], pts = false)
-savefig("../plots/pdp_tpi.pdf")
-pdp(var = [:heat_load], pts = false)
-savefig("../plots/pdp_heat_load.pdf")
-
-pdp(var = [:mean_dens_30, :hdw], var2_levels = [5, 75, 150], pts = false)
-savefig("../plots/pdp_dens_hdw.pdf")
-
-pdp(var = [:mean_dens_30, :prev_sev], var2_levels = [0, 1, 2], pts = false)
-
-
-pdp(var = [:mean_dens_30, :em], var2_levels = [10, 15, 20], pts = false)
-
-pdp(var = [:mean_dens, :prev_sev], var2_levels = [0.5, 1.5, 2.5], pts = false)
-savefig("../plots/pdp_dens_prevsev.pdf")
-
-pdp(var = [:hdw, :mean_dens_30], var2_levels = [50, 150, 250], pts = false)
-savefig("../plots/pdp_hdw_dens.pdf")
-
-##---------------------------------------------------------------
-## predictions when only varying forest structure
-##---------------------------------------------------------------
-
-fake_features = copy(features);
-fake_features.cwd .= mean(features.cwd);
-fake_features.slope .= mean(features.slope);
-fake_features.tpi .= mean(features.tpi);
-fake_features.heat_load .= mean(features.heat_load);
-fake_features.prev_sev .= mean(features.prev_sev);
-fake_features.avg_fuel_moisture .= mean(features.avg_fuel_moisture);
-fake_features.hdw .= mean(features.hdw);
-fake_features.avg_fuel_temp .= mean(features.avg_fuel_temp);
-
-fake_predict = MLJ.predict(fm, fake_features[ho_list, :]);
-
-probs = pdf(yhat, ["low-none", "med", "high"]);
-
-pi_list = findall(data[ho_list, :own_type] .== "Private Industrial" .&& data[ho_list, :cwd] .< 1500)
-pf_list = findall(data[ho_list, :own_type] .== "Federal" .&& data[ho_list, :cwd] .< 1500)

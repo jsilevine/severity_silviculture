@@ -442,7 +442,7 @@ p1 <- plot_grid(cwd + theme(axis.title = element_blank()),
                 heat_load + theme(axis.title = element_blank()),
                 align ="hv")
 p1
-ggsave("plots/figureS3a.png")
+ggsave("plots/figureS3/figureS3a.png")
 
 p1 <- plot_grid(cwd + theme(axis.title = element_blank(),
                             legend.position = "none"),
@@ -454,7 +454,7 @@ p1 <- plot_grid(cwd + theme(axis.title = element_blank(),
                             legend.position = "none"),
                 align ="hv")
 p1
-ggsave("plots/figureS3_topography.png")
+ggsave("plots/figureS3/figureS3_topography.png")
 
 
 p2 <- plot_grid(hdw + theme(axis.title = element_blank()),
@@ -476,7 +476,7 @@ p2 <- plot_grid(hdw + theme(axis.title = element_blank(),
                 align ="hv")
 p2
 
-ggsave("plots/figureS3_weather.png")
+ggsave("plots/figureS3/figureS3_weather.png")
 
 
 p3 <- plot_grid(dens_30 + theme(axis.title = element_blank()),
@@ -498,7 +498,7 @@ p3 <- plot_grid(dens_30 + theme(axis.title = element_blank(),
                 align ="hv")
 p3
 
-ggsave("plots/figureS3_fs30.png")
+ggsave("plots/figureS3/figureS3_fs30.png")
 
 p4 <- plot_grid(dens_180 + theme(axis.title = element_blank(),
                             legend.position = "none"),
@@ -511,7 +511,7 @@ p4 <- plot_grid(dens_180 + theme(axis.title = element_blank(),
                 align ="hv")
 p4
 
-ggsave("plots/figureS3_fs180.png")
+ggsave("plots/figureS3/figureS3_fs180.png")
 
 p5 <- plot_grid(em + theme(axis.title = element_blank(),
                             legend.position = "none"),
@@ -522,4 +522,4 @@ p5
 
 mean_area_180
 
-ggsave("plots/figureS3_misc.png")
+ggsave("plots/figureS3/figureS3_misc.png")

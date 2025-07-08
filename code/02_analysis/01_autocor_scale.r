@@ -26,7 +26,7 @@ s <- sample(1:nrow(data), round(0.3 * nrow(data)))
 
 naive_model <- glm(hs ~ hdw_scaled + avg_fuel_moisture_scaled + prev_sev_scaled +
                      mean_dens_30_scaled + mean_dens_30_scaled:hdw_scaled +
-                     clust_30_scaled +
+                     clust_30_scaled+
                      mean_ht_30_scaled + mean_ht_30_scaled:hdw_scaled +
                      mean_area_30_scaled + mean_area_30_scaled:hdw_scaled +
                      em_scaled + em_scaled:hdw_scaled +
@@ -47,4 +47,4 @@ v1 <- variogram(z~1, data = df.resid, locations = ~x+y, cutoff = 3000)
 f1 <- fit.variogram(v1, vgm("Sph"))
 max.dist <- f1$range[2]
 bb <- ceiling(max.dist) ##round up to nearest whole number
-saveRDS(bb, "data/autocor_scale_m.rds")
+saveRDS(bb, "data/autocor_scale/autocor_scale_m.rds")

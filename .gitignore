@@ -2,17 +2,20 @@
 .idea
 *.log
 tmp/
-
-## do not, for now, include data
+.RDataTmp
+.Rhistory
 qlg/
+
+## data
 data/
+data_archive/
+data_archive.zip
+
+## unused code
 code/QLG
-code/daily_progression_maps
 code/gee
 code/old
-code/scratch.r
-code/todo.org
-code/variable_def.r
 code/viirs_download_token.txt
-plots/
+
+## no manuscript files are necessary
 manuscript/
