@@ -11,13 +11,18 @@ The repository is organized as follows:
 + ~Manifest.toml/Project.toml~: =julia= package versioning and session information for reproducability.
 
 ** Note on data availability
-The data were too large to upload and version control using Git and Github. Instead, we provide a .zip repository of the data as a separate Zenodo submission at =doi:____=. To download, either navigate to the [[][Zenodo submission]] directly, or using bash:
+The data were too large to upload and version control using Git and Github. Instead, we provide a .zip repository of the data as a separate Zenodo submission at [[https://zenodo.org/records/15848846][doi:10.5281/zenodo.15848845]]. To facilitate data transfer, the .zip file was split into four subfiles, each less than or equal to 2.1 Gb.
+
+To download and merge these components, either navigate to the [[https://zenodo.org/records/15848846][Zenodo submission]] directly, or using bash:
 
 #+BEGIN_SRC bash
 #!/bin/bash
 
-# Download dataset from Zenodo
-wget -O data.zip "https://zenodo.org/record/1234567/files/your_data_file.zip?download=1"
+# Download and reassemble split archive from Zenodo
+for part in aa ab ac ad; do
+  wget -c https://zenodo.org/record/15848846/files/data_part_$part
+done
+cat data_part_aa data_part_ab data_part_ac data_part_ad > data.zip
 
 # Unzip into the main directory, so that the scripts will function as intended.
 unzip data.zip -d severity_and_silviculture/data

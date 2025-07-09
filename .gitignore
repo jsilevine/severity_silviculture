@@ -10,6 +10,10 @@ qlg/
 data/
 data_archive/
 data_archive.zip
+data_part_aa
+data_part_ab
+data_part_ac
+data_part_ad
 
 ## unused code
 code/QLG
